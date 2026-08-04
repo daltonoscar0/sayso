@@ -47,10 +47,15 @@ const std::vector<Grammar>& grammars();
 std::vector<Segment> classify(const std::string& input,
                               const std::vector<Token>& tokens, Direction dir);
 
-// Longest span, in tokens, a class may claim. Written spans are short —
-// "March 14, 2015" is four tokens — but spoken ones are not: "nine hundred
-// ninety-nine million nine hundred ninety-nine thousand nine hundred
-// ninety-nine" runs to eleven. The spoken side is the binding constraint.
-constexpr size_t kMaxSpanTokens = 12;
+// Longest span, in tokens, a class may claim. The two directions differ by a
+// lot: the longest written span is "$1,234,567.89" at eight tokens, while the
+// longest spoken one — "nine hundred ninety-nine million nine hundred
+// ninety-nine thousand nine hundred ninety-nine" — runs to eleven. Since the
+// classifier's cost is quadratic in this number, they get separate caps.
+constexpr size_t kMaxWrittenSpanTokens = 8;
+constexpr size_t kMaxSpokenSpanTokens = 12;
+inline size_t max_span_tokens(Direction dir) {
+    return dir == Direction::TTS ? kMaxWrittenSpanTokens : kMaxSpokenSpanTokens;
+}
 
 }  // namespace sayso

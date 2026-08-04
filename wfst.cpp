@@ -1,9 +1,10 @@
 #include "wfst.h"
 
 #include <algorithm>
-#include <map>
+#include <cstdint>
 #include <queue>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace sayso {
 
@@ -201,12 +202,19 @@ Wfst compose(const Wfst& a, const Wfst& b) {
     // A composed state is (state in a, state in b, filter). The filter keeps
     // an epsilon on a's output tape from being paired with an epsilon on b's
     // input tape in two different orders, which would duplicate paths.
-    using Triple = std::tuple<int, int, int>;
-    std::map<Triple, int> index;
-    std::vector<Triple> stack;
+    //
+    // The triple is packed into one 64-bit key: composition is the hot loop of
+    // the whole library, and a hashed integer costs a fraction of a
+    // std::map<std::tuple<...>> lookup.
+    auto pack = [](int sa, int sb, int filter) {
+        return (static_cast<uint64_t>(sa) << 34) | (static_cast<uint64_t>(sb) << 2) |
+               static_cast<uint64_t>(filter);
+    };
+    std::unordered_map<uint64_t, int> index;
+    std::vector<uint64_t> stack;
 
     auto state_for = [&](int sa, int sb, int filter) {
-        Triple key{sa, sb, filter};
+        uint64_t key = pack(sa, sb, filter);
         auto it = index.find(key);
         if (it != index.end()) return it->second;
         float fw = kInfinity;
@@ -220,9 +228,11 @@ Wfst compose(const Wfst& a, const Wfst& b) {
 
     out.set_start(state_for(a.start(), b.start(), 0));
     while (!stack.empty()) {
-        Triple cur = stack.back();
+        uint64_t cur = stack.back();
         stack.pop_back();
-        auto [sa, sb, filter] = cur;
+        int sa = static_cast<int>(cur >> 34);
+        int sb = static_cast<int>((cur >> 2) & 0xFFFFFFFFull);
+        int filter = static_cast<int>(cur & 0x3);
         int here = index[cur];
 
         for (const Arc& x : a.arcs(sa)) {
@@ -389,24 +399,127 @@ Path best_transduction(const Wfst& a, const std::vector<Label>& input) {
 Cascade& Cascade::then(const Wfst& stage) {
     stages_.push_back(&stage);
     inverted_.clear();
+    forward_.computed = backward_.computed = false;
     return *this;
 }
 
-Path Cascade::apply(const std::vector<Label>& input) const {
+namespace {
+
+// Labels that can be the first symbol read: walk the input-epsilon arcs out
+// of the start state and collect every real label they lead to.
+std::unordered_set<Label> compute_first_labels(const Wfst& f) {
+    std::unordered_set<Label> first;
+    if (f.start() < 0) return first;
+    std::vector<int> stack{f.start()};
+    std::unordered_set<int> seen{f.start()};
+    while (!stack.empty()) {
+        int s = stack.back();
+        stack.pop_back();
+        for (const Arc& a : f.arcs(s)) {
+            if (a.ilabel != kEpsilon) {
+                first.insert(a.ilabel);
+            } else if (seen.insert(a.next).second) {
+                stack.push_back(a.next);
+            }
+        }
+    }
+    return first;
+}
+
+// Labels that can be the last symbol read: the mirror image, over states from
+// which a final state is reachable without reading anything more.
+std::unordered_set<Label> compute_last_labels(const Wfst& f) {
+    std::unordered_set<Label> last;
+    int n = f.num_states();
+    if (n == 0) return last;
+
+    std::vector<std::vector<int>> back(n);
+    for (int s = 0; s < n; ++s)
+        for (const Arc& a : f.arcs(s))
+            if (a.ilabel == kEpsilon) back[a.next].push_back(s);
+
+    std::vector<char> can_finish(n, 0);
+    std::vector<int> stack;
+    for (int s = 0; s < n; ++s)
+        if (f.is_final(s)) {
+            can_finish[s] = 1;
+            stack.push_back(s);
+        }
+    while (!stack.empty()) {
+        int s = stack.back();
+        stack.pop_back();
+        for (int p : back[s])
+            if (!can_finish[p]) {
+                can_finish[p] = 1;
+                stack.push_back(p);
+            }
+    }
+
+    for (int s = 0; s < n; ++s)
+        for (const Arc& a : f.arcs(s))
+            if (a.ilabel != kEpsilon && can_finish[a.next]) last.insert(a.ilabel);
+    return last;
+}
+
+}  // namespace
+
+const Cascade::Boundary& Cascade::boundary(bool inverse) const {
+    Boundary& b = inverse ? backward_ : forward_;
+    if (b.computed) return b;
+    if (!stages_.empty()) {
+        // The stage that reads the input: the first one forwards, the last one
+        // inverted backwards. Later stages constrain further, but the cheap
+        // test only needs a necessary condition.
+        Wfst held;
+        const Wfst* reader = stages_.front();
+        if (inverse) {
+            held = invert(*stages_.back());
+            reader = &held;
+        }
+        b.first = compute_first_labels(*reader);
+        b.last = compute_last_labels(*reader);
+    }
+    b.computed = true;
+    return b;
+}
+
+namespace {
+
+// connect() between stages keeps a dead branch from being multiplied by the
+// next stage. On the last stage there is no next stage, and shortest_path
+// ignores dead branches anyway, so the trim is pure cost.
+Path run_stages(const std::vector<Label>& input,
+                const std::vector<const Wfst*>& stages) {
     Wfst lattice = transducer(input, input);
-    for (const Wfst* stage : stages_) lattice = connect(compose(lattice, *stage));
+    for (size_t i = 0; i < stages.size(); ++i) {
+        lattice = compose(lattice, *stages[i]);
+        if (i + 1 < stages.size()) lattice = connect(lattice);
+    }
     return shortest_path(lattice);
 }
 
+}  // namespace
+
+Path Cascade::apply(const std::vector<Label>& input) const {
+    const Boundary& b = boundary(false);
+    if (!input.empty() && (!b.first.count(input.front()) || !b.last.count(input.back())))
+        return Path();
+    return run_stages(input, stages_);
+}
+
 Path Cascade::apply_inverse(const std::vector<Label>& input) const {
+    const Boundary& b = boundary(true);
+    if (!input.empty() && (!b.first.count(input.front()) || !b.last.count(input.back())))
+        return Path();
     if (inverted_.size() != stages_.size()) {
         inverted_.clear();
         for (auto it = stages_.rbegin(); it != stages_.rend(); ++it)
             inverted_.push_back(invert(**it));
     }
-    Wfst lattice = transducer(input, input);
-    for (const Wfst& stage : inverted_) lattice = connect(compose(lattice, stage));
-    return shortest_path(lattice);
+    std::vector<const Wfst*> stages;
+    stages.reserve(inverted_.size());
+    for (const Wfst& stage : inverted_) stages.push_back(&stage);
+    return run_stages(input, stages);
 }
 
 }  // namespace sayso

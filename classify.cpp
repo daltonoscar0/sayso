@@ -93,7 +93,7 @@ std::vector<Segment> classify(const std::string& input,
         plain.next = state[i + 1];
         lattice.add_arc(state[i], plain);
 
-        for (size_t j = i + 1; j <= n && j - i <= kMaxSpanTokens; ++j) {
+        for (size_t j = i + 1; j <= n && j - i <= max_span_tokens(dir); ++j) {
             size_t from = static_cast<size_t>(tokens[i].start_index);
             size_t to = static_cast<size_t>(tokens[j - 1].end_index);
             std::string source = input.substr(from, to - from);

@@ -4,7 +4,6 @@ wfst_tests
 number_tests
 money_date_tests
 pipeline_tests
-eval/sayso_eval
 
 # Object files
 *.o
@@ -14,3 +13,9 @@ eval/data/*.tsv
 
 # macOS
 .DS_Store
+
+# Evaluation environment (dev dependencies only; see eval/README.md)
+eval/.venv/
+eval/nemo_results.tsv
+eval/generate_slice
+eval/sayso_eval

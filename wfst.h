@@ -13,6 +13,7 @@
 // Nothing in the grammar files pokes at states or arcs directly; they call
 // transducer(), union_of(), concat_of(), closure(), compose() and invert().
 #include <limits>
+#include <unordered_set>
 #include <vector>
 
 #include "symbols.h"
@@ -116,8 +117,21 @@ class Cascade {
     Path apply_inverse(const std::vector<Label>& input) const;
 
   private:
+    // The labels that can begin and end an accepted input. The classifier asks
+    // every grammar about every span of every sentence, and the overwhelming
+    // majority of those questions are settled by the first and last symbols
+    // alone: no currency grammar has anything to say about a span starting
+    // with a digit, and no number grammar has anything to say about one
+    // ending in "summary". Two set lookups replace two compositions.
+    struct Boundary {
+        std::unordered_set<Label> first, last;
+        bool computed = false;
+    };
+    const Boundary& boundary(bool inverse) const;
+
     std::vector<const Wfst*> stages_;
     mutable std::vector<Wfst> inverted_;
+    mutable Boundary forward_, backward_;
 };
 
 }  // namespace sayso
