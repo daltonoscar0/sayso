@@ -48,12 +48,21 @@ std::vector<Segment> classify(const std::string& input,
                               const std::vector<Token>& tokens, Direction dir);
 
 // Longest span, in tokens, a class may claim. The two directions differ by a
-// lot: the longest written span is "$1,234,567.89" at eight tokens, while the
-// longest spoken one — "nine hundred ninety-nine million nine hundred
-// ninety-nine thousand nine hundred ninety-nine" — runs to eleven. Since the
-// classifier's cost is quadratic in this number, they get separate caps.
+// lot. The longest written span is "$1,234,567.89" at eight tokens. The
+// longest spoken one is a spelled-out cardinal, whose length depends on
+// whether its compounds are hyphenated — and speech recognisers do not
+// hyphenate, so ITN sees the long form. "nine hundred ninety nine million
+// nine hundred ninety nine thousand nine hundred ninety nine" is fourteen
+// tokens, fifteen with a sign word; sixteen covers every unhyphenated
+// cardinal below a billion.
+//
+// Cost grows sharply with this number — raising it from twelve to twenty cost
+// fivefold throughput — so the two directions get separate caps and the
+// spoken one is set to what unhyphenated speech actually needs, not to the
+// grammar's twelve-digit ceiling. Spelled-out *billions* are consequently
+// classified in pieces; they remain correct written-to-spoken.
 constexpr size_t kMaxWrittenSpanTokens = 8;
-constexpr size_t kMaxSpokenSpanTokens = 12;
+constexpr size_t kMaxSpokenSpanTokens = 16;
 inline size_t max_span_tokens(Direction dir) {
     return dir == Direction::TTS ? kMaxWrittenSpanTokens : kMaxSpokenSpanTokens;
 }

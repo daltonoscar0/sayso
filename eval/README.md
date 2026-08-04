@@ -66,61 +66,53 @@ slice tells you that.
 normaliser and inverse normaliser on the same slice, printing a table in the same shape as
 `sayso_eval` and writing per-example outputs to `nemo_results.tsv`.
 
+### Getting it installed
+
+This works, and is what produced the NeMo columns in the top-level README:
+
 ```bash
 python3 -m venv .venv
-./.venv/bin/pip install nemo_text_processing
-./.venv/bin/python nemo_compare.py
+brew install openfst                                    # 1.8.4
+CPPFLAGS=-I/opt/homebrew/include LDFLAGS=-L/opt/homebrew/lib \
+    ./.venv/bin/pip install "pynini==2.1.7"             # ~2 hours to compile
+./.venv/bin/pip install --no-deps nemo_text_processing
+./.venv/bin/pip install joblib pandas inflect regex tqdm wget sacremoses wrapt \
+    editdistance transformers cdifflib "setuptools>=65.5.1"
+./.venv/bin/python nemo_compare.py --relaxed
 ```
 
-### Status in this environment
+Two things about that are worth knowing before repeating it.
 
-pynini would not build here, so the NeMo half has not been run. The exact failures, in order:
+**`--no-deps` is load-bearing.** `nemo_text_processing` pins `pynini==2.1.6.post1`, so a plain
+install throws away a working pynini and tries to build 2.1.6 from source, which fails. pip
+warns about the version mismatch on every subsequent command; NeMo runs correctly against
+2.1.7 regardless. The trailing package list is everything `--no-deps` skipped, discovered by
+importing and reading the `ModuleNotFoundError`s one at a time.
 
-**1. No OpenFst headers.**
+**Version matching is the whole problem.** pynini pins an exact OpenFst version and PyPI has
+no arm64 wheel, so pip always builds from source and the two have to agree. The two failures:
 
 ```
-$ ./.venv/bin/pip install nemo_text_processing
-  building '_pywrapfst' extension
+$ ./.venv/bin/pip install nemo_text_processing          # no OpenFst at all
   extensions/_pywrapfst.cpp:1201:10: fatal error: 'fst/util.h' file not found
-   1201 | #include <fst/util.h>
-  ERROR: Failed building wheel for pynini
-```
 
-**2. OpenFst 1.8.4 installed, but pynini 2.1.6 targets 1.8.3.**
-
-```
-$ brew install openfst                       # 1.8.4
-$ CPPFLAGS=-I/opt/homebrew/include LDFLAGS=-L/opt/homebrew/lib \
-      ./.venv/bin/pip install nemo_text_processing
+$ brew install openfst && CPPFLAGS=-I/opt/homebrew/include \
+      ./.venv/bin/pip install nemo_text_processing      # OpenFst 1.8.4 vs pynini 2.1.6
   extensions/stringmap.h:185:26: error: no member named 'StringJoin' in namespace 'fst';
                                  did you mean 'StrJoin'?
-  ERROR: Failed building wheel for pynini
 ```
 
-OpenFst renamed `StringJoin` to `StrJoin` in 1.8.4. pynini 2.1.6 and OpenFst 1.8.4 are not
-API-compatible; the versions have to be matched.
+OpenFst renamed `StringJoin` to `StrJoin` in 1.8.4. pynini 2.1.6 targets 1.8.3; pynini 2.1.7
+targets 1.8.4, which is why the third attempt compiled. The upstream-recommended route,
+`conda install -c conda-forge pynini`, ships a prebuilt binary and avoids all of this — there
+is no conda on this machine.
 
-**3. Version-matched source build, too slow to complete.**
+### Reading the results
 
-```
-$ CPPFLAGS=-I/opt/homebrew/include LDFLAGS=-L/opt/homebrew/lib \
-      ./.venv/bin/pip install "pynini==2.1.7"
-```
-
-This one compiles — no errors — but pynini's extension modules are large enough that the build
-was still running after an hour of wall clock on this machine (Python 3.9, macOS, arm64), and
-was abandoned rather than blocking the rest of the work.
-
-**The path that is known to work** is the one upstream recommends, a prebuilt binary rather
-than a source build:
-
-```bash
-conda install -c conda-forge pynini
-pip install nemo_text_processing
-```
-
-There is no conda on this machine. On a machine that has one, `nemo_compare.py` runs
-unchanged.
-
+Run both modes. `--relaxed` is the only one in which a cross-system number means anything:
+strict scoring penalises NeMo for hyphenation and for the British "and", and feeds its inverse
+normaliser hyphenated text that no speech recogniser produces. Even relaxed, several remaining
+gaps are differences of target rather than errors — the top-level README enumerates them
+against `nemo_results.tsv`.
 
 `.venv/` is gitignored. Nothing in it is on any include or link path used by `make`.

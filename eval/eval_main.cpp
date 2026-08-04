@@ -4,7 +4,17 @@
 // Slice format, one example per line, '#' for comments:
 //   semiotic class <TAB> written <TAB> spoken [<TAB> canonical written]
 //
-// Scoring is exact string match after collapsing whitespace.
+// Two scoring modes.
+//
+// Strict (default) is exact string match after collapsing whitespace.
+//
+// Relaxed (--relaxed) additionally folds away the conventions that two
+// correct normalisers may simply disagree about: hyphens inside compounds
+// ("thirty-fourth" vs "thirty fourth") and the British "and" in
+// "nine hundred and forty two". It also strips hyphens from the ITN *input*,
+// because inverse normalisers are built for ASR output, which has none.
+// Relaxed is the only mode in which a cross-system number means anything;
+// strict measures conformance to this slice's conventions, which are Sayso's.
 //
 // The optional fourth column exists because inverse normalisation is only
 // defined up to a canonical written form. "march fourteenth twenty fifteen"
@@ -39,6 +49,9 @@ struct Example {
     std::string semiotic_class, written, spoken, canonical;
 };
 
+// Fold hyphens to spaces and drop a standalone "and", then squeeze.
+std::string fold_style(const std::string& s);
+
 std::string squeeze(const std::string& s) {
     std::string out;
     bool in_space = true;
@@ -52,6 +65,30 @@ std::string squeeze(const std::string& s) {
         in_space = space;
     }
     while (!out.empty() && out.back() == ' ') out.pop_back();
+    return out;
+}
+
+std::string fold_style(const std::string& s) {
+    std::string spaced;
+    for (char c : s) spaced += (c == '-' ? ' ' : c);
+    std::string out;
+    size_t i = 0;
+    while (i < spaced.size()) {
+        size_t j = spaced.find(' ', i);
+        if (j == std::string::npos) j = spaced.size();
+        std::string token = spaced.substr(i, j - i);
+        if (token != "and") {
+            if (!out.empty()) out += ' ';
+            out += token;
+        }
+        i = j + 1;
+    }
+    return out;
+}
+
+std::string dehyphenate(const std::string& s) {
+    std::string out;
+    for (char c : s) out += (c == '-' ? ' ' : c);
     return out;
 }
 
@@ -104,7 +141,13 @@ void show_errors(const std::vector<std::string>& errors, size_t limit) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string path = argc > 1 ? argv[1] : "data/google_tn_slice.tsv";
+    std::string path = "data/google_tn_slice.tsv";
+    bool relaxed = false;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--relaxed") relaxed = true;
+        else path = arg;
+    }
     std::vector<Example> examples = load(path);
     if (examples.empty()) {
         std::cerr << "no examples in " << path << "\n"
@@ -116,6 +159,9 @@ int main(int argc, char** argv) {
     for (const Example& e : examples)
         if (e.canonical != e.written) has_canonical = true;
     std::cout << "slice: " << path << "  (" << examples.size() << " examples)\n"
+              << "scoring: " << (relaxed ? "relaxed (hyphens and \"and\" folded away)"
+                                         : "strict (exact match)")
+              << "\n"
               << "ITN scored against: "
               << (has_canonical ? "the canonical written column"
                                 : "the written column (no canonical column present)")
@@ -126,9 +172,12 @@ int main(int argc, char** argv) {
     std::vector<std::string> tts_errors, itn_errors;
 
     auto scoring_started = std::chrono::steady_clock::now();
+    auto compare = [&](const std::string& a) {
+        return relaxed ? fold_style(squeeze(a)) : squeeze(a);
+    };
     for (const Example& e : examples) {
-        std::string got = squeeze(normalize(e.written, Direction::TTS));
-        std::string want = squeeze(e.spoken);
+        std::string got = compare(normalize(e.written, Direction::TTS));
+        std::string want = compare(e.spoken);
         ++tts_all.total;
         ++tts_class[e.semiotic_class].total;
         if (got == want) {
@@ -139,7 +188,8 @@ int main(int argc, char** argv) {
                                  "] want [" + want + "]");
         }
 
-        got = squeeze(normalize(e.spoken, Direction::ITN));
+        std::string spoken_in = relaxed ? dehyphenate(e.spoken) : e.spoken;
+        got = squeeze(normalize(spoken_in, Direction::ITN));
         want = squeeze(e.canonical);
         ++itn_all.total;
         ++itn_class[e.semiotic_class].total;

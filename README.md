@@ -202,42 +202,85 @@ Where nondeterminism arises from inversion — `twenty five` against `twenty-fiv
 
 ## Accuracy
 
-Run `cd eval && ./generate_slice && ./sayso_eval`. Numbers below are from the 500-example
-synthetic slice (see the caveat under it).
+Run `cd eval && ./generate_slice && ./sayso_eval` (add `--relaxed` for the second table).
+Numbers are from the 500-example synthetic slice; read the caveat below before drawing
+conclusions from the NeMo columns.
 
-**TTS verbalisation** (written → spoken)
+### Strict scoring — exact match
 
-| class | n | accuracy |
-|---|---:|---:|
-| CARDINAL | 125 | 100.0% |
-| ORDINAL | 125 | 100.0% |
-| MONEY | 125 | 100.0% |
-| DATE | 125 | 100.0% |
-| **all** | **500** | **100.0%** |
+| class | n | Sayso TTS | Sayso ITN | NeMo TTS | NeMo ITN |
+|---|---:|---:|---:|---:|---:|
+| CARDINAL | 125 | 100.0% | 100.0% | 16.0% | 9.6% |
+| ORDINAL | 125 | 100.0% | 100.0% | 43.2% | 43.2% |
+| MONEY | 125 | 100.0% | 100.0% | 0.8% | 3.2% |
+| DATE | 125 | 100.0% | 100.0% | 12.8% | 0.0% |
+| **all** | **500** | **100.0%** | **100.0%** | **18.2%** | **14.0%** |
 
-**ITN** (spoken → written), scored against the canonical written form
+**Those NeMo numbers are not a quality measurement and should not be read as one.** The slice's
+reference spoken forms follow Sayso's conventions, so Sayso scores 100% on it close to by
+construction, and NeMo is penalised for every place it makes a different but equally correct
+choice — `thirty fourth` for `thirty-fourth`, `nine hundred and forty two` for
+`nine hundred forty-two`. Its ITN is also fed hyphenated text, which no speech recogniser
+produces and its grammars do not expect.
 
-| class | n | Sayso | NeMo |
-|---|---:|---:|---:|
-| CARDINAL | 125 | 100.0% | — |
-| ORDINAL | 125 | 100.0% | — |
-| MONEY | 125 | 100.0% | — |
-| DATE | 125 | 100.0% | — |
-| **all** | **500** | **100.0%** | **—** |
+### Relaxed scoring — hyphens and "and" folded away, ITN input de-hyphenated
 
-**Throughput**, single-threaded, `-O2`, Apple M-series:
+| class | n | Sayso TTS | Sayso ITN | NeMo TTS | NeMo ITN |
+|---|---:|---:|---:|---:|---:|
+| CARDINAL | 125 | 100.0% | 100.0% | 40.8% | 85.6% |
+| ORDINAL | 125 | 100.0% | 100.0% | 100.0% | 100.0% |
+| MONEY | 125 | 100.0% | 100.0% | 100.0% | 60.8% |
+| DATE | 125 | 100.0% | 100.0% | 53.6% | 0.0% |
+| **all** | **500** | **100.0%** | **100.0%** | **73.6%** | **61.6%** |
+
+NeMo scoring 100% on ORDINAL in both directions is the useful signal here: where the two
+systems share a convention, the harness is fair and NeMo gets everything right. The remaining
+gaps are, on inspection of `nemo_results.tsv`, mostly still differences of target rather than
+errors:
+
+- **CARDINAL TTS** — NeMo reads a bare `61795` digit by digit and `1880` as a year
+  (`eighteen eighty`). Sayso reads both as cardinals. Neither is wrong about a bare number;
+  they guess differently.
+- **DATE TTS** — NeMo says `the second of december nineteen fifty eight`, a British
+  day-first reading. Correct English, different from the slice's reference.
+- **DATE ITN** — NeMo writes `october 1 1975`. It does not reassemble a spoken date into a
+  numeric written form at all, which is the thing Sayso's format weights exist to do.
+- **MONEY ITN** — NeMo writes `54942 pounds` rather than `£54942`; it does not map a
+  currency word back to its symbol.
+
+The fair summary is that Sayso canonicalises harder in the ITN direction — numeric dates,
+currency symbols, no thousands separators — because that is what its weighting scheme is for,
+and that NeMo covers far more of English than four semiotic classes.
+
+### Throughput
+
+Single-threaded, `-O2`, Apple M-series, machine otherwise idle:
 
 | | sentences | time | rate |
 |---|---:|---:|---:|
-| cold, every sentence novel | 1,000 | 3.94 s | 254/s |
-| warm, span cache populated | 10,000 | 0.93 s | 10,773/s |
+| cold, every sentence novel | 1,000 | 16.2 s | 61/s |
+| warm, span cache populated | 10,000 | 2.6 s | 3,900/s |
 
-Ten thousand sentences take about forty seconds if every one is unlike anything seen
-before, and about a second once the corpus has shown its vocabulary of numbers, amounts and
-dates — which is what a real corpus does within the first few hundred sentences. The cold
-figure is what it is because CLASSIFY asks every grammar about every span; FIRST/LAST-set
-prefilters answer most of those questions without composing anything, and cut that path by
-about 5x.
+Ten thousand sentences take under three seconds once the corpus has shown its vocabulary of
+numbers, amounts and dates — which a real corpus does within its first few hundred sentences —
+and about two and a half minutes if every single one is unlike anything seen before.
+
+The cold figure is dominated by CLASSIFY asking every grammar about every span. FIRST- and
+LAST-set prefilters answer most of those questions without composing anything. The remaining
+cost is genuine long spans of number words, and it is sensitive to the spoken span cap:
+raising that cap from 12 to 16 tokens — needed so that unhyphenated ASR output like
+`eight hundred forty six million one hundred sixty eight thousand nine hundred forty nine`
+is classified as one number rather than three — cost about fourfold. Fixing that properly
+means composing once per span *start* and reading every prefix off the result, rather than
+once per span; see next steps.
+
+### Reproducing the NeMo columns
+
+`eval/nemo_compare.py` scores NVIDIA NeMo on the same slice, in the same shape, and writes
+per-example outputs to `nemo_results.tsv`. Getting NeMo installed took three attempts — it
+pins `pynini==2.1.6.post1`, which needs OpenFst **1.8.3** specifically, and PyPI has no arm64
+wheel for it. The route that worked and the two that did not are written up in
+[`eval/README.md`](eval/README.md).
 
 ### What that slice is, and is not
 
@@ -247,35 +290,10 @@ normalisation dataset. It is not distributed here. When it is absent,
 a small reference verbaliser written as ordinary arithmetic and string concatenation — *not*
 from the transducers under test, which would score 100% and measure nothing.
 
-So the numbers above measure agreement between two independent implementations of the same
-conventions. They do not measure agreement with the Google TN dataset's conventions. Place the
-real slice (`eval/README.md` says how) for a number that does.
-
-### NeMo comparison
-
-NeMo is not installed in this environment, so the NeMo column above is empty. The blocker is
-`pynini`, the OpenFst binding NeMo's text-processing package is built on. Three attempts, with
-the exact failures recorded in [`eval/README.md`](eval/README.md):
-
-1. `pip install nemo_text_processing` — the `pynini` wheel build fails with
-   `fatal error: 'fst/util.h' file not found`: no OpenFst headers on the system.
-2. With `brew install openfst` (1.8.4) and `CPPFLAGS=-I/opt/homebrew/include`, the build gets
-   past that and fails with `error: no member named 'StringJoin' in namespace 'fst'; did you
-   mean 'StrJoin'?`. pynini 2.1.6 targets OpenFst 1.8.3, which renamed that helper in 1.8.4.
-3. `pynini==2.1.7` against OpenFst 1.8.4 compiles, but its extension modules take well over an
-   hour on this machine and had not finished when this was written.
-
-The upstream-recommended path is `conda install -c conda-forge pynini`, which ships a prebuilt
-wheel against a matching OpenFst; there is no conda on this machine.
-
-[`eval/nemo_compare.py`](eval/nemo_compare.py) is written and ready. It reads the same slice,
-scores both directions the same way, and prints a table in the same shape as `./sayso_eval`.
-On a machine with a working pynini it is one command:
-
-```bash
-./.venv/bin/python nemo_compare.py
-```
-
+So Sayso's numbers measure agreement between two independent implementations of the same
+conventions. They do not measure agreement with the Google TN dataset's conventions, and they
+are why the NeMo comparison has to be read with the care set out above. Place the real slice
+(`eval/README.md` says how) for numbers that mean more.
 
 ---
 
@@ -338,6 +356,14 @@ sayso/
 - **Optional written-format output.** ITN currently canonicalises hard — every spoken date
   becomes `M/D/YYYY`. Making the target format a parameter is a matter of moving the format
   penalties into a runtime table.
+- **One composition per span start, not per span.** CLASSIFY currently asks each grammar about
+  each span separately, so a sentence containing a long spelled-out numeral re-composes its
+  prefixes over and over. Composing once for the longest span and reading the best path off
+  every intermediate input position would collapse that to one composition per (start, class),
+  and is the fix for the cold-path figure above.
+- **Spelled-out billions in ITN.** The spoken span cap is sixteen tokens, which covers every
+  unhyphenated cardinal below a billion; larger ones are classified in pieces. Raising the cap
+  is a one-line change once the composition above makes it affordable.
 - **Determinisation and minimisation.** Sayso resolves ambiguity by best path and never needs
   a deterministic machine, but weighted determinisation would shrink the date grammar and
   speed up cold-cache classification.

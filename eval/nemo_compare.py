@@ -6,7 +6,12 @@ runtime dependencies, and NeMo brings a large tree of them. Run it inside
 eval/.venv (see eval/README.md), which is the only place those dependencies
 are allowed to exist.
 
-    python nemo_compare.py [data/google_tn_slice.tsv]
+    python nemo_compare.py [data/google_tn_slice.tsv] [--relaxed]
+
+--relaxed folds away conventions two correct normalisers may simply disagree
+about — hyphens inside compounds, the British "and" — and strips hyphens from
+the ITN input, which inverse normalisers do not expect because ASR output has
+none. It is the only mode in which a cross-system number means anything.
 
 Prints a table in the same shape as ./sayso_eval so the two can be read side
 by side, and writes nemo_results.tsv with the per-example outputs.
@@ -17,6 +22,14 @@ from collections import defaultdict
 
 def squeeze(s):
     return " ".join(s.split())
+
+
+def fold_style(s):
+    return " ".join(t for t in s.replace("-", " ").split() if t != "and")
+
+
+def dehyphenate(s):
+    return s.replace("-", " ")
 
 
 def load(path):
@@ -51,7 +64,11 @@ def report(title, per_class):
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "data/google_tn_slice.tsv"
+    args = sys.argv[1:]
+    relaxed = "--relaxed" in args
+    positional = [a for a in args if not a.startswith("--")]
+    path = positional[0] if positional else "data/google_tn_slice.tsv"
+    compare = (lambda s: fold_style(squeeze(s))) if relaxed else squeeze
     rows = load(path)
     if not rows:
         sys.exit(f"no examples in {path}")
@@ -76,19 +93,22 @@ def main():
     with open("nemo_results.tsv", "w", encoding="utf-8") as out:
         out.write("#class\tdirection\tinput\tnemo\treference\n")
         for semiotic, written, spoken, canonical in rows:
-            got = squeeze(normalizer.normalize(written, verbose=False))
+            got = compare(normalizer.normalize(written, verbose=False))
             tts[semiotic][1] += 1
-            if got == squeeze(spoken):
+            if got == compare(spoken):
                 tts[semiotic][0] += 1
-            out.write(f"{semiotic}\ttts\t{written}\t{got}\t{spoken}\n")
+            out.write(f"{semiotic}\ttts\t{written}\t{got}\t{compare(spoken)}\n")
 
-            got = squeeze(inverse.inverse_normalize(spoken, verbose=False))
+            spoken_in = dehyphenate(spoken) if relaxed else spoken
+            got = squeeze(inverse.inverse_normalize(spoken_in, verbose=False))
             itn[semiotic][1] += 1
             if got == squeeze(canonical):
                 itn[semiotic][0] += 1
-            out.write(f"{semiotic}\titn\t{spoken}\t{got}\t{canonical}\n")
+            out.write(f"{semiotic}\titn\t{spoken_in}\t{got}\t{canonical}\n")
 
     print(f"slice: {path}  ({len(rows)} examples)")
+    mode = "relaxed (hyphens and 'and' folded away)" if relaxed else "strict (exact match)"
+    print("scoring: " + mode)
     report("NeMo TTS verbalisation (written -> spoken)", tts)
     report("NeMo ITN (spoken -> written)", itn)
     print("\nper-example outputs written to nemo_results.tsv")
