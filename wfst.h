@@ -98,4 +98,26 @@ Path shortest_path(const Wfst& a);
 // Cheapest output for a given input: compose an input chain, then decode.
 Path best_transduction(const Wfst& a, const std::vector<Label>& input);
 
+// A grammar is a cascade of transducers applied left to right.
+//
+// Composing the stages eagerly would be the obvious thing and is the wrong
+// thing: the date grammar's four written formats composed against its
+// canonical machine come to over a million states, none of which any single
+// input visits. Composing each stage against the small lattice the previous
+// stage produced keeps every intermediate in the hundreds of states. That is
+// the standard lazy-composition trick, and it is also the natural home for
+// inversion — inverting a cascade reverses it and inverts each stage, which
+// is just invert(A ∘ B) = invert(B) ∘ invert(A) applied down the list.
+class Cascade {
+  public:
+    Cascade& then(const Wfst& stage);
+
+    Path apply(const std::vector<Label>& input) const;
+    Path apply_inverse(const std::vector<Label>& input) const;
+
+  private:
+    std::vector<const Wfst*> stages_;
+    mutable std::vector<Wfst> inverted_;
+};
+
 }  // namespace sayso

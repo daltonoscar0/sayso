@@ -22,19 +22,19 @@ static void check(bool ok, const std::string& name) {
     else     {           std::cout << "[PASS]" << name << "\n"; }
 }
 
-static std::string tts(const Wfst& f, const std::string& written) {
-    Path p = best_transduction(f, chars_of(written));
+static std::string tts(const Cascade& g, const std::string& written) {
+    Path p = g.apply(chars_of(written));
     return p.found ? render(p.olabels) : "<none>";
 }
 
-static std::string itn(const Wfst& f, const std::string& spoken) {
+static std::string itn(const Cascade& g, const std::string& spoken) {
     std::vector<std::string> words;
     std::string current;
     for (char c : spoken + " ") {
         if (c == ' ') { if (!current.empty()) words.push_back(current); current.clear(); }
         else current += c;
     }
-    Path p = best_transduction(invert(f), words_of(words));
+    Path p = g.apply_inverse(words_of(words));
     return p.found ? render(p.olabels) : "<none>";
 }
 
@@ -64,41 +64,41 @@ static void cardinal_tests() {
     };
     bool ok = true;
     for (const Case& c : cases)
-        if (tts(cardinal_fst(), c.written) != c.spoken) {
+        if (tts(cardinal_grammar(), c.written) != c.spoken) {
             ok = false;
-            std::cout << "  " << c.written << " -> " << tts(cardinal_fst(), c.written)
+            std::cout << "  " << c.written << " -> " << tts(cardinal_grammar(), c.written)
                       << " (want " << c.spoken << ")\n";
         }
     check(ok, "cardinal verbalisation 0 .. 999,999,999");
 
     ok = true;
     for (const Case& c : cases)
-        if (itn(cardinal_fst(), c.spoken) != c.written) {
+        if (itn(cardinal_grammar(), c.spoken) != c.written) {
             ok = false;
-            std::cout << "  " << c.spoken << " -> " << itn(cardinal_fst(), c.spoken)
+            std::cout << "  " << c.spoken << " -> " << itn(cardinal_grammar(), c.spoken)
                       << " (want " << c.written << ")\n";
         }
     check(ok, "cardinal inverse text normalisation");
 
-    check(tts(cardinal_fst(), "-42") == "minus forty-two" &&
-          itn(cardinal_fst(), "minus forty-two") == "-42" &&
-          itn(cardinal_fst(), "negative forty-two") == "-42",
+    check(tts(cardinal_grammar(), "-42") == "minus forty-two" &&
+          itn(cardinal_grammar(), "minus forty-two") == "-42" &&
+          itn(cardinal_grammar(), "negative forty-two") == "-42",
           "negatives, with 'negative' accepted but 'minus' generated");
 
-    check(tts(cardinal_fst(), "1,234") == "one thousand two hundred thirty-four" &&
-          tts(cardinal_fst(), "12,345,678") ==
+    check(tts(cardinal_grammar(), "1,234") == "one thousand two hundred thirty-four" &&
+          tts(cardinal_grammar(), "12,345,678") ==
               "twelve million three hundred forty-five thousand six hundred seventy-eight",
           "thousands commas are read");
 
-    check(itn(cardinal_fst(), "one thousand two hundred thirty-four") == "1234",
+    check(itn(cardinal_grammar(), "one thousand two hundred thirty-four") == "1234",
           "thousands commas are not written back");
 
-    check(itn(cardinal_fst(), "twenty five") == "25" &&
-          itn(cardinal_fst(), "twenty-five") == "25",
+    check(itn(cardinal_grammar(), "twenty five") == "25" &&
+          itn(cardinal_grammar(), "twenty-five") == "25",
           "spaced and hyphenated compounds both parse");
 
-    check(tts(cardinal_fst(), "007") == "zero zero seven" &&
-          tts(cardinal_fst(), "12345678901234") ==
+    check(tts(cardinal_grammar(), "007") == "zero zero seven" &&
+          tts(cardinal_grammar(), "12345678901234") ==
               "one two three four five six seven eight nine zero one two three four",
           "digit-by-digit fallback for leading zeros and over-long strings");
 }
@@ -117,30 +117,30 @@ static void ordinal_tests() {
     };
     bool ok = true;
     for (const Case& c : cases)
-        if (tts(ordinal_fst(), c.written) != c.spoken) {
+        if (tts(ordinal_grammar(), c.written) != c.spoken) {
             ok = false;
-            std::cout << "  " << c.written << " -> " << tts(ordinal_fst(), c.written)
+            std::cout << "  " << c.written << " -> " << tts(ordinal_grammar(), c.written)
                       << " (want " << c.spoken << ")\n";
         }
     check(ok, "ordinal verbalisation");
 
     ok = true;
     for (const Case& c : cases)
-        if (itn(ordinal_fst(), c.spoken) != c.written) {
+        if (itn(ordinal_grammar(), c.spoken) != c.written) {
             ok = false;
-            std::cout << "  " << c.spoken << " -> " << itn(ordinal_fst(), c.spoken)
+            std::cout << "  " << c.spoken << " -> " << itn(ordinal_grammar(), c.spoken)
                       << " (want " << c.written << ")\n";
         }
     check(ok, "ordinal inverse text normalisation picks the agreeing suffix");
 
-    check(tts(ordinal_fst(), "21th") == "<none>" && tts(ordinal_fst(), "11st") == "<none>",
+    check(tts(ordinal_grammar(), "21th") == "<none>" && tts(ordinal_grammar(), "11st") == "<none>",
           "suffix agreement is enforced, not guessed");
 }
 
 static void hyphenation_tests() {
-    check(tts(cardinal_fst(), "45") == "forty-five" &&
-          tts(cardinal_fst(), "40") == "forty" &&
-          tts(cardinal_fst(), "40000") == "forty thousand",
+    check(tts(cardinal_grammar(), "45") == "forty-five" &&
+          tts(cardinal_grammar(), "40") == "forty" &&
+          tts(cardinal_grammar(), "40000") == "forty thousand",
           "hyphenation joins tens to units and nothing else");
 }
 
@@ -160,8 +160,8 @@ static void property_tests() {
     cardinal_round_trip.show = [](const long long& n) { return std::to_string(n); };
     cardinal_round_trip.holds = [](const long long& n) {
         std::string written = std::to_string(n);
-        std::string spoken = tts(cardinal_fst(), written);
-        return spoken != "<none>" && itn(cardinal_fst(), spoken) == written;
+        std::string spoken = tts(cardinal_grammar(), written);
+        return spoken != "<none>" && itn(cardinal_grammar(), spoken) == written;
     };
     std::string witness;
     check(prop::check_property(cardinal_round_trip, 20260803, 400, witness),
@@ -184,8 +184,8 @@ static void property_tests() {
                            : n % 10 == 2 ? "nd"
                            : n % 10 == 3 ? "rd" : "th";
         std::string written = std::to_string(n) + suffix;
-        std::string spoken = tts(ordinal_fst(), written);
-        return spoken != "<none>" && itn(ordinal_fst(), spoken) == written;
+        std::string spoken = tts(ordinal_grammar(), written);
+        return spoken != "<none>" && itn(ordinal_grammar(), spoken) == written;
     };
     witness.clear();
     check(prop::check_property(ordinal_round_trip, 20260803, 300, witness),
@@ -199,12 +199,12 @@ static void property_tests() {
     spoken_canonical.shrink = prop::shrink_integer;
     spoken_canonical.show = [](const long long& n) { return std::to_string(n); };
     spoken_canonical.holds = [](const long long& n) {
-        std::string canonical = tts(cardinal_fst(), std::to_string(n));
+        std::string canonical = tts(cardinal_grammar(), std::to_string(n));
         if (canonical == "<none>") return false;
         std::string variant;
         for (char c : canonical) variant += (c == '-' ? ' ' : c);
         if (n < 0) variant = "negative" + variant.substr(5);
-        return tts(cardinal_fst(), itn(cardinal_fst(), variant)) == canonical;
+        return tts(cardinal_grammar(), itn(cardinal_grammar(), variant)) == canonical;
     };
     witness.clear();
     check(prop::check_property(spoken_canonical, 20260804, 300, witness),

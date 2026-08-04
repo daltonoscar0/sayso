@@ -1,5 +1,6 @@
 #include "numbers.h"
 
+#include <set>
 #include <string>
 
 #include "weights.h"
@@ -80,9 +81,10 @@ Wfst scale_group(const NumberParts& p, const char* scale) {
                      concat_of({p.padded3_nz, words_out({scale})})});
 }
 
-Wfst build_cardinal_core() {
+Wfst build_cardinal_core(bool include_zero) {
     const NumberParts& p = number_parts();
-    std::vector<Wfst> alternatives{p.zero, p.lead3};
+    std::vector<Wfst> alternatives{p.lead3};
+    if (include_zero) alternatives.push_back(p.zero);
 
     // 1,000 .. 999,999,999,999: a leading group, its scale word, then one
     // group per descending scale.
@@ -100,11 +102,13 @@ Wfst build_cardinal_core() {
     // Digit-by-digit fallback for anything the grammar above cannot parse —
     // strings longer than twelve digits, and leading-zero strings like "007".
     // Priced per digit so it never outbids a real reading of a short number.
-    std::vector<Wfst> any_digit;
-    for (int d = 0; d <= 9; ++d)
+    std::vector<Wfst> any_digit, first_digit;
+    for (int d = 0; d <= 9; ++d) {
         any_digit.push_back(rule(digit(d), {kUnits[d]}, kDigitByDigitPerDigit));
-    Wfst one_digit = union_of(any_digit);
-    alternatives.push_back(concat_of({one_digit, closure(one_digit)}));
+        if (d > 0 || include_zero) first_digit.push_back(any_digit.back());
+    }
+    alternatives.push_back(
+        concat_of({union_of(first_digit), closure(union_of(any_digit))}));
 
     return connect(union_of(alternatives));
 }
@@ -193,25 +197,32 @@ Wfst build_suffix_stripper() {
     return f;
 }
 
-Wfst build_hyphenator() {
+// The compound-joining machine over an explicit vocabulary. States: `home`,
+// where any word passes through, and one `held` state per tens word, entered
+// without emitting anything so the following word can decide whether to join.
+Wfst build_hyphenator(const std::vector<std::string>& vocabulary) {
     Wfst f;
     int home = f.add_state(0.0f);
     f.set_start(home);
 
     std::vector<std::string> joinable;
-    for (int d = 1; d <= 9; ++d) joinable.push_back(kUnits[d]);
-    for (const OrdinalPair& o : kOrdinals) {
-        std::string c = o.cardinal;
+    for (const std::string& w : vocabulary) {
         for (int d = 1; d <= 9; ++d)
-            if (c == kUnits[d]) joinable.push_back(o.ordinal);
+            if (w == kUnits[d]) joinable.push_back(w);
+        for (const OrdinalPair& o : kOrdinals)
+            if (w == o.ordinal)
+                for (int d = 1; d <= 9; ++d)
+                    if (std::string(o.cardinal) == kUnits[d]) joinable.push_back(w);
     }
 
-    std::vector<std::string> vocabulary = cardinal_vocabulary();
-    for (const std::string& w : ordinal_vocabulary()) vocabulary.push_back(w);
+    std::vector<std::string> tens;
+    for (const std::string& w : vocabulary)
+        for (int t = 2; t <= 9; ++t)
+            if (w == kTens[t]) tens.push_back(w);
 
     for (const std::string& w : vocabulary) {
         bool is_tens = false;
-        for (int t = 2; t <= 9; ++t) if (w == kTens[t]) is_tens = true;
+        for (const std::string& t : tens) if (w == t) is_tens = true;
         if (is_tens) continue;
         Arc keep;
         keep.ilabel = keep.olabel = word(w);
@@ -219,26 +230,38 @@ Wfst build_hyphenator() {
         f.add_arc(home, keep);
     }
 
-    for (int t = 2; t <= 9; ++t) {
+    for (const std::string& t : tens) {
         int held = f.add_state();
         Arc hold;
-        hold.ilabel = word(kTens[t]);
+        hold.ilabel = word(t);
         hold.next = held;
         f.add_arc(home, hold);
         for (const std::string& u : joinable) {
             Arc join;
             join.ilabel = word(u);
-            join.olabel = word(std::string(kTens[t]) + "-" + u);
+            join.olabel = word(t + "-" + u);
             join.next = home;
             f.add_arc(held, join);
         }
         Arc release;                       // nothing joinable followed
-        release.olabel = word(kTens[t]);
+        release.olabel = word(t);
         release.weight = kSpacedCompoundPenalty;
         release.next = home;
         f.add_arc(held, release);
     }
     return f;
+}
+
+// Every distinct word `f` can write.
+std::vector<std::string> output_vocabulary(const Wfst& f) {
+    std::vector<std::string> words;
+    std::set<Label> seen;
+    for (int s = 0; s < f.num_states(); ++s)
+        for (const Arc& a : f.arcs(s)) {
+            if (a.olabel == kEpsilon || symbols().kind(a.olabel) != Kind::WORD) continue;
+            if (seen.insert(a.olabel).second) words.push_back(symbols().text(a.olabel));
+        }
+    return words;
 }
 
 }  // namespace
@@ -253,11 +276,17 @@ Wfst chars_in(const std::string& written, float w) {
     return transducer(chars_of(written), {}, w);
 }
 
+Wfst chars_out(const std::string& written, float w) {
+    return transducer({}, chars_of(written), w);
+}
+
 Wfst words_out(const std::vector<std::string>& spoken, float w) {
     return transducer({}, words_of(spoken), w);
 }
 
 // ---- vocabularies -----------------------------------------------------------
+
+const char* digit_word(int d) { return kUnits[d]; }
 
 const std::vector<std::string>& cardinal_vocabulary() {
     static const std::vector<std::string> vocabulary = [] {
@@ -290,35 +319,37 @@ const NumberParts& number_parts() {
     return parts;
 }
 
-const Wfst& hyphenator_fst() {
-    static const Wfst f = build_hyphenator();
-    return f;
-}
-
 const Wfst& cardinal_core_fst() {
-    static const Wfst f = build_cardinal_core();
+    static const Wfst f = build_cardinal_core(true);
     return f;
 }
 
-const Wfst& cardinal_fst() {
-    static const Wfst f = [] {
-        Wfst signed_number = union_of({
-            cardinal_core_fst(),
-            concat_of({rule("-", {"minus"}), cardinal_core_fst()}),
-            concat_of({rule("-", {"negative"}, kAltSignPenalty), cardinal_core_fst()}),
-        });
-        return connect(compose(signed_number, hyphenator_fst()));
-    }();
+const Wfst& cardinal_positive_fst() {
+    static const Wfst f = build_cardinal_core(false);
     return f;
 }
 
-const Wfst& ordinal_fst() {
-    static const Wfst f = [] {
-        Wfst stripped = compose(build_suffix_stripper(), cardinal_core_fst());
-        Wfst inflected = compose(stripped, build_ordinaliser());
-        return connect(compose(inflected, hyphenator_fst()));
-    }();
-    return f;
+Wfst hyphenated(const Wfst& f) {
+    return connect(compose(f, build_hyphenator(output_vocabulary(f))));
+}
+
+const Cascade& cardinal_grammar() {
+    static const Wfst signed_number = union_of({
+        cardinal_core_fst(),
+        concat_of({rule("-", {"minus"}), cardinal_core_fst()}),
+        concat_of({rule("-", {"negative"}, kAltSignPenalty), cardinal_core_fst()}),
+    });
+    static const Wfst joined = hyphenated(signed_number);
+    static const Cascade grammar = Cascade().then(joined);
+    return grammar;
+}
+
+const Cascade& ordinal_grammar() {
+    static const Wfst stripper = build_suffix_stripper();
+    static const Wfst ordinaliser = hyphenated(build_ordinaliser());
+    static const Cascade grammar =
+        Cascade().then(stripper).then(cardinal_core_fst()).then(ordinaliser);
+    return grammar;
 }
 
 }  // namespace sayso

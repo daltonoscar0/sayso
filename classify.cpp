@@ -2,6 +2,8 @@
 
 #include <unordered_map>
 
+#include "dates.h"
+#include "money.h"
 #include "numbers.h"
 #include "text.h"
 #include "weights.h"
@@ -23,24 +25,15 @@ const std::vector<Grammar>& grammars() {
     // Ordered most specific first; the order is cosmetic, the entry costs do
     // the deciding.
     static const std::vector<Grammar> registry = {
-        {SemioticClass::ORDINAL,  &ordinal_fst(),  kOrdinalEntry},
-        {SemioticClass::CARDINAL, &cardinal_fst(), kCardinalEntry},
+        {SemioticClass::MONEY,    &money_grammar(),    kMoneyEntry},
+        {SemioticClass::DATE,     &date_grammar(),     kDateEntry},
+        {SemioticClass::ORDINAL,  &ordinal_grammar(),  kOrdinalEntry},
+        {SemioticClass::CARDINAL, &cardinal_grammar(), kCardinalEntry},
     };
     return registry;
 }
 
 namespace {
-
-// The grammars are stored written->spoken; ITN reads the same machines
-// backwards. Inverting is cheap but not free, so each one is done once.
-const std::vector<Wfst>& inverted_grammars() {
-    static const std::vector<Wfst> inverted = [] {
-        std::vector<Wfst> v;
-        for (const Grammar& g : grammars()) v.push_back(invert(*g.fst));
-        return v;
-    }();
-    return inverted;
-}
 
 // Written spans keep their punctuation and internal spacing (whitespace runs
 // collapse to one space); spoken spans are just their words.
@@ -107,15 +100,13 @@ std::vector<Segment> classify(const std::string& input,
             std::vector<Label> labels = span_labels(source, tokens, i, j, dir);
             if (labels.empty()) continue;
 
-            for (size_t g = 0; g < grammars().size(); ++g) {
-                const Grammar& grammar = grammars()[g];
+            for (const Grammar& grammar : grammars()) {
                 std::string key = std::string(1, dir == Direction::TTS ? 't' : 'i') +
                                   class_name(grammar.type) + "\t" + source;
                 auto hit = cache.find(key);
                 if (hit == cache.end()) {
-                    const Wfst& machine =
-                        dir == Direction::TTS ? *grammar.fst : inverted_grammars()[g];
-                    Path p = best_transduction(machine, labels);
+                    Path p = dir == Direction::TTS ? grammar.grammar->apply(labels)
+                                                   : grammar.grammar->apply_inverse(labels);
                     hit = cache.emplace(key, std::make_pair(
                                                  p.found ? p.weight : kInfinity,
                                                  p.found ? render(p.olabels) : std::string()))

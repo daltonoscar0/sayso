@@ -2,8 +2,8 @@
 // Cardinal and ordinal grammars.
 //
 // Every grammar in Sayso is written in one direction only — written form on
-// the lower tape, spoken form on the upper tape. The ITN direction is
-// invert() of the same machine, so the two directions cannot drift apart.
+// the lower tape, spoken form on the upper tape. The ITN direction is the
+// inverse of the same cascade, so the two directions cannot drift apart.
 #include <string>
 #include <vector>
 
@@ -11,16 +11,21 @@
 
 namespace sayso {
 
-// "1,234" <-> "one thousand two hundred thirty four"
-const Wfst& cardinal_fst();
+// "1,234" <-> "one thousand two hundred thirty-four"
+const Cascade& cardinal_grammar();
 // "21st" <-> "twenty-first"
-const Wfst& ordinal_fst();
+const Cascade& ordinal_grammar();
 
-// Word-level pass that joins a tens word to a following unit:
-// "twenty" "five" -> "twenty-five". The hyphenated path is free and the
-// spaced one is not, so TTS produces "twenty-five" while ITN still reads
-// both. Composed onto every number before it reaches a larger grammar.
-const Wfst& hyphenator_fst();
+// Compose `f` with a word-level pass that joins a tens word to a following
+// unit: "twenty" "five" -> "twenty-five". The hyphenated path is free and the
+// spaced one is not, so TTS produces "twenty-five" while ITN reads both.
+//
+// The pass needs an identity arc for every word it may see, and a word it has
+// not been told about does not merely pass through — it has no arc, so the
+// path dies. Rather than maintain that list by hand, the vocabulary is read
+// off `f`'s own output labels. Applying this to a machine is therefore always
+// safe, whatever words it emits.
+Wfst hyphenated(const Wfst& f);
 
 // Sub-machines shared with the money and date grammars. Each reads an exact
 // number of written digits, which is what lets larger grammars concatenate
@@ -36,9 +41,13 @@ struct NumberParts {
 };
 const NumberParts& number_parts();
 
-// Unsigned cardinal without the hyphenation pass; money and date grammars
-// embed this and hyphenate once at the end.
-const Wfst& cardinal_core_fst();
+// Unsigned cardinals, before hyphenation; money and date grammars embed these.
+const Wfst& cardinal_core_fst();      // includes "0" -> "zero"
+const Wfst& cardinal_positive_fst();  // excludes it, so "$0.99" is cents-only
+
+// "zero" .. "nine", for grammars that read digits one at a time (the
+// fractional part of "$2.5 million", say).
+const char* digit_word(int d);
 
 // Every word the number grammars can emit, for building identity arcs.
 const std::vector<std::string>& cardinal_vocabulary();
@@ -48,6 +57,7 @@ const std::vector<std::string>& ordinal_vocabulary();
 Wfst rule(const std::string& written, const std::vector<std::string>& spoken,
           float w = 0.0f);
 Wfst chars_in(const std::string& written, float w = 0.0f);
+Wfst chars_out(const std::string& written, float w = 0.0f);
 Wfst words_out(const std::vector<std::string>& spoken, float w = 0.0f);
 
 }  // namespace sayso

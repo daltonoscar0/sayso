@@ -386,4 +386,27 @@ Path best_transduction(const Wfst& a, const std::vector<Label>& input) {
     return shortest_path(compose(chain, a));
 }
 
+Cascade& Cascade::then(const Wfst& stage) {
+    stages_.push_back(&stage);
+    inverted_.clear();
+    return *this;
+}
+
+Path Cascade::apply(const std::vector<Label>& input) const {
+    Wfst lattice = transducer(input, input);
+    for (const Wfst* stage : stages_) lattice = connect(compose(lattice, *stage));
+    return shortest_path(lattice);
+}
+
+Path Cascade::apply_inverse(const std::vector<Label>& input) const {
+    if (inverted_.size() != stages_.size()) {
+        inverted_.clear();
+        for (auto it = stages_.rbegin(); it != stages_.rend(); ++it)
+            inverted_.push_back(invert(**it));
+    }
+    Wfst lattice = transducer(input, input);
+    for (const Wfst& stage : inverted_) lattice = connect(compose(lattice, stage));
+    return shortest_path(lattice);
+}
+
 }  // namespace sayso

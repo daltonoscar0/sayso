@@ -22,9 +22,23 @@ One line each: what was decided, what else was on the table, why.
 - **`minus` is generated for a leading `-`, `negative` merely accepted** — alt: accepting only one; the weight records the preference without narrowing what ITN can read.
 - **Cardinals reach 999,999,999,999 (twelve digits)** — alt: stopping at the required nine digits; the scale loop is the same code either way, so billions came free.
 
+## Money and dates
+
+- **Grammars are lazily-composed `Cascade`s, not eagerly composed machines** — alt: composing every stage at build time; the date grammar's formats composed against its canonical machine came to 1.2M states, of which any one input visits a few hundred, so stages are composed against the input lattice instead.
+- **Priority union is expressed as a hair of weight, not as set difference** — alt: implementing `difference` and subtracting the specific case from the general one; a 0.01 margin on the general branch makes the specific one win wherever both apply, in both directions, for one line of code.
+- **`hyphenated()` reads its vocabulary off the machine it is given** — alt: a hand-maintained word list; a missing identity arc does not pass a word through, it kills the path, and that bug cost real debugging time before the vocabulary became derived.
+- **One canonical date grammar (M/D/YYYY) plus character-level format normalisers** — alt: one machine per written format; reordering a field costs one path per value of that field, and holding the day (31) or year (200) in a small rewrite machine is far cheaper than holding it across a copy of the day and year verbalisers.
+- **ISO dates are limited to years 1900-2099** — alt: all four-digit years; each year is a distinct path through the reorder machine, and 200 covers every realistic date at a tenth the size.
+- **Dates require all three fields** — alt: making the year optional; "March 14" is common, but an optional year makes "may second" a date and the classifier has no context to tell that from the verb, so the ambiguity is refused rather than guessed at.
+- **The dollar is the canonical currency; others pay a hair** — alt: leaving the tie; "ninety-nine cents" fits dollars and euros equally, and an arbitrary tie-break is a coin flip that changes between builds.
+- **Format penalties are small (0.5-0.7), not large** — alt: the 2.0-3.0 they started at; they only have to beat the canonical format's zero, and a large penalty made a date span look expensive to the classifier, which then read "2015-03-14" as three cardinals separated by minus signs.
+- **Homographs always convert in ITN ("I second the motion" -> "I 2nd the motion")** — alt: a stop-word list; the classifier models no context, so this is exactly the job deferred to the neural reranker, and the behaviour is pinned by a test rather than left to be discovered.
+
 ## Pipeline
 
 - **Scalpel is the tokeniser; Sayso adds an offset-repair adapter, not a fork** — alt: patching Scalpel, reimplementing tokenisation; Scalpel's `START` state ignores HYPHEN/APOSTROPHE/OTHER characters, so `-` in `2015-03-14` and `€` in `€40` are dropped, and comparing token offsets against the input recovers them generically.
 - **CLASSIFY is a lattice WFST over token boundaries, decoded by the same `shortest_path`** — alt: a longest-match scan; making it a lattice means longest-match is an emergent consequence of pricing PLAIN per character rather than a separate rule.
+- **Spans are capped at 12 tokens** — alt: unbounded spans; written spans are short but spoken ones are not ("nine hundred ninety-nine million …" is eleven tokens), and the cap is what keeps the lattice from being quadratic in sentence length.
+- **Span verbalisations are memoised per (direction, class, text)** — alt: recomputing; the classifier asks the same question of the same span text constantly across a corpus, and the cache is what gets the throughput number into the thousands of sentences per second.
 - **Spans are case-folded before reaching a grammar** — alt: case variants inside every grammar; the spoken side is lowercase by construction and the canonical written forms Sayso generates contain no letters that need case.
 - **Serialisation copies the gaps between segments verbatim from the input** — alt: a detokeniser; byte offsets make the untouched text exactly untouched, so quoting, spacing and stray punctuation cannot be damaged by normalisation.

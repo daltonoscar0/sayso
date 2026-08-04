@@ -35,11 +35,11 @@ struct Segment {
     float cost = 0.0f;
 };
 
-// A class grammar, always stored written->spoken; classify() inverts it when
-// asked for ITN.
+// A class grammar, always oriented written->spoken; classify() applies the
+// cascade in reverse when asked for ITN.
 struct Grammar {
     SemioticClass type;
-    const Wfst* fst;
+    const Cascade* grammar;
     float entry_cost;
 };
 const std::vector<Grammar>& grammars();
@@ -47,9 +47,10 @@ const std::vector<Grammar>& grammars();
 std::vector<Segment> classify(const std::string& input,
                               const std::vector<Token>& tokens, Direction dir);
 
-// Longest span, in tokens, a class may claim. "March 14, 2015" is four and
-// "$2.5 million" is five; eight leaves room without making the lattice
-// quadratic in practice.
-constexpr size_t kMaxSpanTokens = 8;
+// Longest span, in tokens, a class may claim. Written spans are short —
+// "March 14, 2015" is four tokens — but spoken ones are not: "nine hundred
+// ninety-nine million nine hundred ninety-nine thousand nine hundred
+// ninety-nine" runs to eleven. The spoken side is the binding constraint.
+constexpr size_t kMaxSpanTokens = 12;
 
 }  // namespace sayso
