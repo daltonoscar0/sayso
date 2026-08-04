@@ -378,8 +378,7 @@ ShortestDistance shortest_distance(const Wfst& a) {
     return out;
 }
 
-Path backtrace(const Wfst& a, const ShortestDistance& distance, int state, float cost) {
-    (void)a;
+Path backtrace(const ShortestDistance& distance, int state, float cost) {
     Path result;
     std::vector<Arc> path;
     for (int s = state; s != distance.start; s = distance.from[s])
@@ -409,7 +408,7 @@ Path shortest_path(const Wfst& a) {
         }
     }
     if (best < 0) return Path();
-    return backtrace(a, distance, best, best_cost);
+    return backtrace(distance, best, best_cost);
 }
 
 Path best_transduction(const Wfst& a, const std::vector<Label>& input) {
@@ -610,7 +609,7 @@ std::vector<Path> run_prefix_stages(const std::vector<Label>& input,
         }
     }
     for (size_t at = 0; at < best.size(); ++at)
-        if (best[at] >= 0) result[at] = backtrace(lattice, distance, best[at], best_cost[at]);
+        if (best[at] >= 0) result[at] = backtrace(distance, best[at], best_cost[at]);
     return result;
 }
 

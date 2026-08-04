@@ -45,6 +45,9 @@ grammar, put the sentence back together.
 │  Every path spans the whole sentence, so best-path decoding  │
 │  gives longest-match/lowest-cost tagging. Longest match is   │
 │  not a rule; it is what pricing PLAIN per character does.    │
+│                                                              │
+│  Each grammar is run once per span *start*, not once per     │
+│  span: every arc leaving state i comes from one composition. │
 └────────────────────┬─────────────────────────────────────────┘
                      │  spans: CARDINAL | ORDINAL | MONEY | DATE | PLAIN
                      ▼
@@ -339,7 +342,11 @@ sayso/
 ├── sayso_main.cpp          # CLI
 ├── *_tests.cpp             # four test binaries
 ├── docs/DECISIONS.md       # every design call, with its alternative and rationale
-└── eval/                   # evaluation harness; the only place dev deps may live
+└── eval/
+    ├── eval_main.cpp         # accuracy both directions, per class, throughput
+    ├── generate_slice.cpp    # synthetic slice, from an independent verbaliser
+    ├── convert_google_tn.py  # raw Google TN shard -> slice format
+    └── nemo_compare.py       # the same slice scored by NeMo; dev deps live here
 ```
 
 ---

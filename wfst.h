@@ -111,7 +111,7 @@ struct ShortestDistance {
     int start = -1;
 };
 ShortestDistance shortest_distance(const Wfst& a);
-Path backtrace(const Wfst& a, const ShortestDistance& distance, int state, float cost);
+Path backtrace(const ShortestDistance& distance, int state, float cost);
 
 // Cheapest output for a given input: compose an input chain, then decode.
 Path best_transduction(const Wfst& a, const std::vector<Label>& input);
