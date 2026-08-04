@@ -195,8 +195,9 @@ Wfst project(const Wfst& a, bool to_input) {
 Wfst project_input(const Wfst& a) { return project(a, true); }
 Wfst project_output(const Wfst& a) { return project(a, false); }
 
-Wfst compose(const Wfst& a, const Wfst& b) {
+Wfst compose(const Wfst& a, const Wfst& b, std::vector<int>* left_of) {
     Wfst out;
+    if (left_of) left_of->clear();
     if (a.start() < 0 || b.start() < 0) return empty_fst();
 
     // A composed state is (state in a, state in b, filter). The filter keeps
@@ -221,6 +222,7 @@ Wfst compose(const Wfst& a, const Wfst& b) {
         if (a.is_final(sa) && b.is_final(sb))
             fw = a.final_weight(sa) + b.final_weight(sb);
         int id = out.add_state(fw);
+        if (left_of) left_of->push_back(sa);
         index[key] = id;
         stack.push_back(key);
         return id;
@@ -283,8 +285,9 @@ Wfst compose(const Wfst& a, const Wfst& b) {
     return out;
 }
 
-Wfst connect(const Wfst& a) {
+Wfst connect(const Wfst& a, std::vector<int>* survivor_of) {
     int n = a.num_states();
+    if (survivor_of) survivor_of->clear();
     if (a.start() < 0 || n == 0) return empty_fst();
 
     std::vector<char> reachable(n, 0), coreachable(n, 0);
@@ -320,7 +323,10 @@ Wfst connect(const Wfst& a) {
     std::vector<int> remap(n, -1);
     Wfst out;
     for (int s = 0; s < n; ++s)
-        if (reachable[s] && coreachable[s]) remap[s] = out.add_state(a.final_weight(s));
+        if (reachable[s] && coreachable[s]) {
+            remap[s] = out.add_state(a.final_weight(s));
+            if (survivor_of) survivor_of->push_back(s);
+        }
     if (remap[a.start()] < 0) return empty_fst();
     out.set_start(remap[a.start()]);
     for (int s = 0; s < n; ++s) {
@@ -337,17 +343,20 @@ Wfst connect(const Wfst& a) {
 
 // ---- search -----------------------------------------------------------------
 
-Path shortest_path(const Wfst& a) {
-    Path result;
+// Single-source shortest distance, kept separate from the backtrace so that
+// one Dijkstra can answer for many destinations.
+ShortestDistance shortest_distance(const Wfst& a) {
+    ShortestDistance out;
     int n = a.num_states();
-    if (a.start() < 0 || n == 0) return result;
+    if (a.start() < 0 || n == 0) return out;
 
-    std::vector<float> dist(n, kInfinity);
-    std::vector<int> from(n, -1);
-    std::vector<Arc> via(n);
+    out.dist.assign(n, kInfinity);
+    out.from.assign(n, -1);
+    out.via.assign(n, Arc());
     using Entry = std::pair<float, int>;
     std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> queue;
-    dist[a.start()] = 0.0f;
+    out.dist[a.start()] = 0.0f;
+    out.start = a.start();
     queue.push({0.0f, a.start()});
 
     std::vector<char> done(n, 0);
@@ -358,37 +367,49 @@ Path shortest_path(const Wfst& a) {
         done[s] = 1;
         for (const Arc& arc : a.arcs(s)) {
             float nd = d + arc.weight;
-            if (nd < dist[arc.next]) {
-                dist[arc.next] = nd;
-                from[arc.next] = s;
-                via[arc.next] = arc;
+            if (nd < out.dist[arc.next]) {
+                out.dist[arc.next] = nd;
+                out.from[arc.next] = s;
+                out.via[arc.next] = arc;
                 queue.push({nd, arc.next});
             }
         }
     }
+    return out;
+}
 
-    int best = -1;
-    float best_cost = kInfinity;
-    for (int s = 0; s < n; ++s) {
-        if (!a.is_final(s) || dist[s] == kInfinity) continue;
-        float total = dist[s] + a.final_weight(s);
-        if (total < best_cost) {
-            best_cost = total;
-            best = s;
-        }
-    }
-    if (best < 0) return result;
-
+Path backtrace(const Wfst& a, const ShortestDistance& distance, int state, float cost) {
+    (void)a;
+    Path result;
     std::vector<Arc> path;
-    for (int s = best; s != a.start(); s = from[s]) path.push_back(via[s]);
+    for (int s = state; s != distance.start; s = distance.from[s])
+        path.push_back(distance.via[s]);
     std::reverse(path.begin(), path.end());
     for (const Arc& arc : path) {
         if (arc.ilabel != kEpsilon) result.ilabels.push_back(arc.ilabel);
         if (arc.olabel != kEpsilon) result.olabels.push_back(arc.olabel);
     }
-    result.weight = best_cost;
+    result.weight = cost;
     result.found = true;
     return result;
+}
+
+Path shortest_path(const Wfst& a) {
+    ShortestDistance distance = shortest_distance(a);
+    if (distance.dist.empty()) return Path();
+
+    int best = -1;
+    float best_cost = kInfinity;
+    for (int s = 0; s < a.num_states(); ++s) {
+        if (!a.is_final(s) || distance.dist[s] == kInfinity) continue;
+        float total = distance.dist[s] + a.final_weight(s);
+        if (total < best_cost) {
+            best_cost = total;
+            best = s;
+        }
+    }
+    if (best < 0) return Path();
+    return backtrace(a, distance, best, best_cost);
 }
 
 Path best_transduction(const Wfst& a, const std::vector<Label>& input) {
@@ -399,6 +420,7 @@ Path best_transduction(const Wfst& a, const std::vector<Label>& input) {
 Cascade& Cascade::then(const Wfst& stage) {
     stages_.push_back(&stage);
     inverted_.clear();
+    inverted_pointers_.clear();
     forward_.computed = backward_.computed = false;
     return *this;
 }
@@ -511,15 +533,99 @@ Path Cascade::apply_inverse(const std::vector<Label>& input) const {
     const Boundary& b = boundary(true);
     if (!input.empty() && (!b.first.count(input.front()) || !b.last.count(input.back())))
         return Path();
+    return run_stages(input, inverse_stages());
+}
+
+const std::vector<const Wfst*>& Cascade::inverse_stages() const {
     if (inverted_.size() != stages_.size()) {
         inverted_.clear();
+        inverted_pointers_.clear();
         for (auto it = stages_.rbegin(); it != stages_.rend(); ++it)
             inverted_.push_back(invert(**it));
+        for (const Wfst& stage : inverted_) inverted_pointers_.push_back(&stage);
     }
-    std::vector<const Wfst*> stages;
-    stages.reserve(inverted_.size());
-    for (const Wfst& stage : inverted_) stages.push_back(&stage);
-    return run_stages(input, stages);
+    return inverted_pointers_;
+}
+
+namespace {
+
+// An input chain whose every state is final, so that a path may stop at any
+// input position and still be accepted. This is what makes one composition
+// answer for every prefix at once.
+Wfst prefix_chain(const std::vector<Label>& input) {
+    Wfst f;
+    int prev = f.add_state(0.0f);
+    f.set_start(prev);
+    for (Label l : input) {
+        int next = f.add_state(0.0f);
+        Arc a;
+        a.ilabel = a.olabel = l;
+        a.next = next;
+        f.add_arc(prev, a);
+        prev = next;
+    }
+    return f;
+}
+
+// Compose the cascade against a prefix chain, carrying each lattice state's
+// input position along, then decode every position from a single Dijkstra.
+std::vector<Path> run_prefix_stages(const std::vector<Label>& input,
+                                    const std::vector<const Wfst*>& stages) {
+    std::vector<Path> result(input.size() + 1);
+
+    Wfst lattice = prefix_chain(input);
+    std::vector<int> position(lattice.num_states());
+    for (int s = 0; s < lattice.num_states(); ++s) position[s] = s;
+
+    std::vector<int> mapping;
+    for (const Wfst* stage : stages) {
+        Wfst composed = compose(lattice, *stage, &mapping);
+        std::vector<int> composed_position(composed.num_states());
+        for (int s = 0; s < composed.num_states(); ++s)
+            composed_position[s] = position[mapping[s]];
+
+        Wfst trimmed = connect(composed, &mapping);
+        std::vector<int> trimmed_position(trimmed.num_states());
+        for (int s = 0; s < trimmed.num_states(); ++s)
+            trimmed_position[s] = composed_position[mapping[s]];
+
+        lattice = std::move(trimmed);
+        position = std::move(trimmed_position);
+        if (lattice.num_states() == 0) return result;
+    }
+
+    ShortestDistance distance = shortest_distance(lattice);
+    if (distance.dist.empty()) return result;
+
+    // Cheapest final state per input position, then one backtrace each.
+    std::vector<int> best(input.size() + 1, -1);
+    std::vector<float> best_cost(input.size() + 1, kInfinity);
+    for (int s = 0; s < lattice.num_states(); ++s) {
+        if (!lattice.is_final(s) || distance.dist[s] == kInfinity) continue;
+        size_t at = static_cast<size_t>(position[s]);
+        float total = distance.dist[s] + lattice.final_weight(s);
+        if (at < best_cost.size() && total < best_cost[at]) {
+            best_cost[at] = total;
+            best[at] = s;
+        }
+    }
+    for (size_t at = 0; at < best.size(); ++at)
+        if (best[at] >= 0) result[at] = backtrace(lattice, distance, best[at], best_cost[at]);
+    return result;
+}
+
+}  // namespace
+
+std::vector<Path> Cascade::apply_prefixes(const std::vector<Label>& input) const {
+    if (!input.empty() && !boundary(false).first.count(input.front()))
+        return std::vector<Path>(input.size() + 1);
+    return run_prefix_stages(input, stages_);
+}
+
+std::vector<Path> Cascade::apply_prefixes_inverse(const std::vector<Label>& input) const {
+    if (!input.empty() && !boundary(true).first.count(input.front()))
+        return std::vector<Path>(input.size() + 1);
+    return run_prefix_stages(input, inverse_stages());
 }
 
 }  // namespace sayso

@@ -49,20 +49,16 @@ std::vector<Segment> classify(const std::string& input,
 
 // Longest span, in tokens, a class may claim. The two directions differ by a
 // lot. The longest written span is "$1,234,567.89" at eight tokens. The
-// longest spoken one is a spelled-out cardinal, whose length depends on
-// whether its compounds are hyphenated — and speech recognisers do not
-// hyphenate, so ITN sees the long form. "nine hundred ninety nine million
-// nine hundred ninety nine thousand nine hundred ninety nine" is fourteen
-// tokens, fifteen with a sign word; sixteen covers every unhyphenated
-// cardinal below a billion.
+// longest spoken one is a spelled-out amount, and its length depends on
+// whether its compounds are hyphenated — speech recognisers do not hyphenate,
+// so ITN sees the long form: "nine hundred ninety nine billion ... nine
+// hundred ninety nine dollars and ninety nine cents" is twenty-four tokens.
 //
-// Cost grows sharply with this number — raising it from twelve to twenty cost
-// fivefold throughput — so the two directions get separate caps and the
-// spoken one is set to what unhyphenated speech actually needs, not to the
-// grammar's twelve-digit ceiling. Spelled-out *billions* are consequently
-// classified in pieces; they remain correct written-to-spoken.
+// Both caps are affordable because CLASSIFY runs each grammar once per span
+// *start* rather than once per span (see Cascade::apply_prefixes), so cost
+// grows with the longest span a grammar can actually match, not with the cap.
 constexpr size_t kMaxWrittenSpanTokens = 8;
-constexpr size_t kMaxSpokenSpanTokens = 16;
+constexpr size_t kMaxSpokenSpanTokens = 24;
 inline size_t max_span_tokens(Direction dir) {
     return dir == Direction::TTS ? kMaxWrittenSpanTokens : kMaxSpokenSpanTokens;
 }

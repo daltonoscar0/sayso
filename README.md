@@ -258,21 +258,23 @@ Single-threaded, `-O2`, Apple M-series, machine otherwise idle:
 
 | | sentences | time | rate |
 |---|---:|---:|---:|
-| cold, every sentence novel | 1,000 | 16.2 s | 61/s |
-| warm, span cache populated | 10,000 | 2.6 s | 3,900/s |
+| cold, every sentence novel | 1,000 | 4.5 s | 221/s |
+| warm, span cache populated | 10,000 | 0.16 s | 61,600/s |
 
-Ten thousand sentences take under three seconds once the corpus has shown its vocabulary of
-numbers, amounts and dates — which a real corpus does within its first few hundred sentences —
-and about two and a half minutes if every single one is unlike anything seen before.
+Ten thousand sentences take about a sixth of a second once the corpus has shown its vocabulary
+of numbers, amounts and dates — which a real corpus does within its first few hundred
+sentences — and about forty-five seconds if every single one is unlike anything seen before.
 
-The cold figure is dominated by CLASSIFY asking every grammar about every span. FIRST- and
-LAST-set prefilters answer most of those questions without composing anything. The remaining
-cost is genuine long spans of number words, and it is sensitive to the spoken span cap:
-raising that cap from 12 to 16 tokens — needed so that unhyphenated ASR output like
-`eight hundred forty six million one hundred sixty eight thousand nine hundred forty nine`
-is classified as one number rather than three — cost about fourfold. Fixing that properly
-means composing once per span *start* and reading every prefix off the result, rather than
-once per span; see next steps.
+Two things get it there. FIRST- and LAST-set prefilters answer most of the classifier's
+questions from the first and last symbol of a span, without composing anything. And CLASSIFY
+runs each grammar once per span *start* rather than once per span: composing against an
+all-final input chain and reading the best path off every input position (`apply_prefixes`)
+answers for all of a start's spans at once, instead of re-walking their shared prefixes.
+
+That second change is why the span caps can be generous. Cost now grows with the longest span
+a grammar can actually match, not with the cap, so raising the spoken cap from 16 to 24
+tokens — enough to hold `nine hundred ninety nine billion ... dollars and ninety nine cents`
+unhyphenated, which is what a speech recogniser hands you — cost nothing measurable.
 
 ### Reproducing the NeMo columns
 
@@ -356,16 +358,11 @@ sayso/
 - **Optional written-format output.** ITN currently canonicalises hard — every spoken date
   becomes `M/D/YYYY`. Making the target format a parameter is a matter of moving the format
   penalties into a runtime table.
-- **One composition per span start, not per span.** CLASSIFY currently asks each grammar about
-  each span separately, so a sentence containing a long spelled-out numeral re-composes its
-  prefixes over and over. Composing once for the longest span and reading the best path off
-  every intermediate input position would collapse that to one composition per (start, class),
-  and is the fix for the cold-path figure above.
-- **Spelled-out billions in ITN.** The spoken span cap is sixteen tokens, which covers every
-  unhyphenated cardinal below a billion; larger ones are classified in pieces. Raising the cap
-  is a one-line change once the composition above makes it affordable.
+- **A faster cold path still.** Prefix composition took the cold figure from 61 to 221
+  sentences a second, and the remaining cost is real composition work rather than repetition.
+  Weighted determinisation of the date grammar, or caching per token rather than per span
+  text, are the next places to look.
 - **Determinisation and minimisation.** Sayso resolves ambiguity by best path and never needs
-  a deterministic machine, but weighted determinisation would shrink the date grammar and
-  speed up cold-cache classification.
+  a deterministic machine, but weighted determinisation would shrink the date grammar.
 - **Languages other than English.** The engine is language-neutral; the grammars are tables of
   English words. A second language is a second set of tables.

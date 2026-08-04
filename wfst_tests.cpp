@@ -122,6 +122,55 @@ static void compose_tests() {
     check(transduce(round, "1") == "uno", "epsilon filter composes insertions with deletions");
 }
 
+// One composition answering for every prefix is what makes CLASSIFY
+// affordable, so the equivalence with running each prefix separately is worth
+// pinning rather than assuming.
+static void prefix_tests() {
+    // Stages must outlive the cascade, so they are named rather than
+    // temporaries — see the note on Cascade::then.
+    Wfst digits = closure(union_of({rule("1", {"one"}), rule("2", {"two"}),
+                                    rule("3", {"three"})}));
+    Cascade counting = Cascade().then(digits);
+
+    std::vector<Path> prefixes = counting.apply_prefixes(chars_of("123"));
+    check(prefixes.size() == 4, "apply_prefixes returns one entry per input position");
+    check(prefixes[0].found && render(prefixes[0].olabels) == "" &&
+              render(prefixes[1].olabels) == "one" &&
+              render(prefixes[2].olabels) == "one two" &&
+              render(prefixes[3].olabels) == "one two three",
+          "each prefix gets its own best path");
+
+    // The point of the exercise: same answers as running each prefix alone.
+    bool agrees = true;
+    for (size_t k = 1; k <= 3; ++k) {
+        Path alone = counting.apply(chars_of(std::string("123").substr(0, k)));
+        if (!alone.found || alone.weight != prefixes[k].weight ||
+            render(alone.olabels) != render(prefixes[k].olabels))
+            agrees = false;
+    }
+    check(agrees, "apply_prefixes agrees with apply on every prefix");
+
+    // A prefix the grammar cannot read is reported as such, not as the best
+    // shorter reading.
+    Wfst exact = transducer(chars_of("12"), words_of({"twelve"}));
+    std::vector<Path> partial = Cascade().then(exact).apply_prefixes(chars_of("12"));
+    check(!partial[1].found && partial[2].found &&
+              render(partial[2].olabels) == "twelve",
+          "prefixes the grammar rejects are marked not-found");
+
+    // Weights are per prefix, not accumulated from the longest path.
+    Wfst tiered = union_of({rule("1", {"one"}, 0.5f),
+                            transducer(chars_of("12"), words_of({"twelve"}), 0.25f)});
+    std::vector<Path> costs = Cascade().then(tiered).apply_prefixes(chars_of("12"));
+    check(costs[1].found && costs[1].weight == 0.5f && costs[2].weight == 0.25f,
+          "each prefix carries its own path weight");
+
+    std::vector<Path> inverse = counting.apply_prefixes_inverse(words_of({"one", "two"}));
+    check(inverse.size() == 3 && render(inverse[1].olabels) == "1" &&
+              render(inverse[2].olabels) == "12",
+          "apply_prefixes_inverse reads the cascade backwards");
+}
+
 static void connect_tests() {
     Wfst f;
     int s0 = f.add_state();
@@ -215,6 +264,7 @@ int main() {
     projection_tests();
     compose_tests();
     connect_tests();
+    prefix_tests();
     shortest_path_tests();
     algebraic_property_tests();
     std::cout << "\nTests run:" << run << "\nTests failed: " << failed << "\n";

@@ -38,14 +38,26 @@ The Google text normalisation dataset (Sproat & Jaitly, 2016) is not distributed
 To use it:
 
 1. Get the English data from <https://www.kaggle.com/datasets/google-nlu/text-normalization>
-   or <https://github.com/rwsproat/text-normalization-data>.
-2. Its format is one *token* per line — `semiotic-class <TAB> before <TAB> after`, with
-   `<eos>` marking sentence ends and `<self>` meaning "unchanged". Reassemble 500 sentences
-   into this directory's sentence-level format: join tokens with spaces, replace `<self>` with
-   the `before` token, and label each sentence with the semiotic class it exercises (or the
-   first non-`PLAIN` class it contains).
-3. Save the result as `data/google_tn_slice.tsv`. Only the first three columns are needed; if
-   you add a fourth, make it the written form you expect ITN to produce.
+   or <https://github.com/rwsproat/text-normalization-data>. It is about 1.1 GB across a
+   hundred shards named `output-NNNNN-of-00100`; one shard is far more than 500 sentences, so
+   there is no need to download all of them.
+2. Convert one shard:
+
+   ```bash
+   python3 convert_google_tn.py output-00000-of-00100 > data/google_tn_slice.tsv
+   ```
+
+   The raw format is one *token* per line — `semiotic-class <TAB> before <TAB> after`, with
+   `<eos>` marking sentence ends, `<self>` meaning "unchanged" and `sil` meaning "not spoken"
+   (which is what punctuation is). The script reassembles sentences and keeps only those whose
+   semiotic content Sayso implements, reporting on stderr how many it dropped and why. Scoring
+   a four-class normaliser on sentences containing TIME or MEASURE would measure the absence of
+   those classes rather than the quality of the four that exist; pass `--keep-all` if that is
+   what you want to see.
+
+That is all — `sayso_eval` reads `data/google_tn_slice.tsv` with no further arguments. The
+dataset has no canonical-written column, so the report will say ITN is scored against the
+written column; see the note above on what that costs.
 
 `data/*.tsv` is gitignored, so the file will not be committed by accident.
 

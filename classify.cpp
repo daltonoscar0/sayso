@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 
+#include "../Scalpel/utf8.h"
 #include "dates.h"
 #include "money.h"
 #include "numbers.h"
@@ -35,28 +36,55 @@ const std::vector<Grammar>& grammars() {
 
 namespace {
 
+// The labels of the *longest* span starting at a token, plus the label
+// position of each shorter span's end. One label sequence answers for every
+// span from that start, which is what lets the grammar be run once.
+struct SpanLabels {
+    std::vector<Label> labels;
+    std::vector<size_t> boundary;  // boundary[k] = labels covering tokens [begin, begin+k)
+};
+
 // Written spans keep their punctuation and internal spacing (whitespace runs
-// collapse to one space); spoken spans are just their words.
-std::vector<Label> span_labels(const std::string& source,
-                               const std::vector<Token>& tokens, size_t begin,
-                               size_t end, Direction dir) {
+// collapse to one space); spoken spans are just their words. Both are case
+// folded, since the grammars are written in one case.
+SpanLabels span_labels(const std::string& input, const std::vector<Token>& tokens,
+                       size_t begin, size_t end, Direction dir) {
+    SpanLabels out;
+    out.boundary.push_back(0);
+
     if (dir == Direction::ITN) {
-        std::vector<std::string> words;
-        for (size_t k = begin; k < end; ++k) words.push_back(fold_case(tokens[k].text));
-        return words_of(words);
+        for (size_t k = begin; k < end; ++k) {
+            out.labels.push_back(word(fold_case(tokens[k].text)));
+            out.boundary.push_back(out.labels.size());
+        }
+        return out;
     }
-    std::string flat;
+
+    size_t from = static_cast<size_t>(tokens[begin].start_index);
+    size_t to = static_cast<size_t>(tokens[end - 1].end_index);
+    size_t next_token = begin;
     bool in_space = false;
-    for (char c : fold_case(source)) {
-        bool space = (c == ' ' || c == '\t' || c == '\n' || c == '\r');
+    size_t i = from, len = 0;
+    while (i < to) {
+        uint32_t cp = utf8::decode(input, i, len);
+        bool space = cp == ' ' || cp == '\t' || cp == '\n' || cp == '\r';
         if (space) {
-            if (!in_space) flat += ' ';
+            if (!in_space) out.labels.push_back(ch(" "));
         } else {
-            flat += c;
+            std::string one;
+            utf8::append(one, utf8::to_lower(cp));
+            out.labels.push_back(ch(one));
         }
         in_space = space;
+        i += len;
+        while (next_token < end &&
+               i >= static_cast<size_t>(tokens[next_token].end_index)) {
+            out.boundary.push_back(out.labels.size());
+            ++next_token;
+        }
     }
-    return chars_of(flat);
+    while (out.boundary.size() < end - begin + 1) out.boundary.push_back(out.labels.size());
+    return out;
 }
 
 struct Candidate {
@@ -74,9 +102,11 @@ std::vector<Segment> classify(const std::string& input,
     size_t n = tokens.size();
     if (n == 0) return result;
 
-    // A span's verbalisation depends only on its class, its text and the
-    // direction, so it is worth remembering across a document.
-    static std::unordered_map<std::string, std::pair<float, std::string>> cache;
+    // A grammar's readings of every prefix of a span depend only on its
+    // class, that span's text and the direction, so they are worth
+    // remembering across a document.
+    using Readings = std::vector<std::pair<float, std::string>>;
+    static std::unordered_map<std::string, Readings> cache;
 
     std::vector<Candidate> candidates;
     Wfst lattice;
@@ -93,34 +123,44 @@ std::vector<Segment> classify(const std::string& input,
         plain.next = state[i + 1];
         lattice.add_arc(state[i], plain);
 
-        for (size_t j = i + 1; j <= n && j - i <= max_span_tokens(dir); ++j) {
-            size_t from = static_cast<size_t>(tokens[i].start_index);
-            size_t to = static_cast<size_t>(tokens[j - 1].end_index);
-            std::string source = input.substr(from, to - from);
-            std::vector<Label> labels = span_labels(source, tokens, i, j, dir);
-            if (labels.empty()) continue;
+        // Every span from this start is answered by one run per grammar over
+        // the longest of them.
+        size_t last = std::min(n, i + max_span_tokens(dir));
+        SpanLabels span = span_labels(input, tokens, i, last, dir);
+        if (span.labels.empty()) continue;
+        size_t from = static_cast<size_t>(tokens[i].start_index);
+        std::string longest = input.substr(
+            from, static_cast<size_t>(tokens[last - 1].end_index) - from);
 
-            for (const Grammar& grammar : grammars()) {
-                std::string key = std::string(1, dir == Direction::TTS ? 't' : 'i') +
-                                  class_name(grammar.type) + "\t" + source;
-                auto hit = cache.find(key);
-                if (hit == cache.end()) {
-                    Path p = dir == Direction::TTS ? grammar.grammar->apply(labels)
-                                                   : grammar.grammar->apply_inverse(labels);
-                    hit = cache.emplace(key, std::make_pair(
-                                                 p.found ? p.weight : kInfinity,
-                                                 p.found ? render(p.olabels) : std::string()))
-                              .first;
-                }
-                if (hit->second.first == kInfinity) continue;
+        for (const Grammar& grammar : grammars()) {
+            std::string key = std::string(1, dir == Direction::TTS ? 't' : 'i') +
+                              class_name(grammar.type) + "\t" + longest;
+            auto hit = cache.find(key);
+            if (hit == cache.end()) {
+                std::vector<Path> paths =
+                    dir == Direction::TTS ? grammar.grammar->apply_prefixes(span.labels)
+                                          : grammar.grammar->apply_prefixes_inverse(span.labels);
+                Readings readings;
+                readings.reserve(paths.size());
+                for (const Path& p : paths)
+                    readings.emplace_back(p.found ? p.weight : kInfinity,
+                                          p.found ? render(p.olabels) : std::string());
+                hit = cache.emplace(std::move(key), std::move(readings)).first;
+            }
+            const Readings& readings = hit->second;
 
-                Candidate c{grammar.type, i, j, hit->second.second,
-                            grammar.entry_cost + hit->second.first};
-                candidates.push_back(c);
+            for (size_t k = 1; k + i <= last; ++k) {
+                size_t at = span.boundary[k];
+                if (at == 0 || at >= readings.size()) continue;
+                float weight = readings[at].first;
+                if (weight == kInfinity) continue;
+
+                candidates.push_back({grammar.type, i, i + k, readings[at].second,
+                                      grammar.entry_cost + weight});
                 Arc arc;
-                arc.weight = c.cost;
+                arc.weight = candidates.back().cost;
                 arc.olabel = static_cast<Label>(candidates.size());
-                arc.next = state[j];
+                arc.next = state[i + k];
                 lattice.add_arc(state[i], arc);
             }
         }

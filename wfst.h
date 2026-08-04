@@ -79,10 +79,16 @@ Wfst project_output(const Wfst& a);
 
 // Composition with Mohri's three-state epsilon filter, so that a pair of
 // epsilon-bearing machines yields each output path exactly once.
-Wfst compose(const Wfst& a, const Wfst& b);
+//
+// `left_of`, when given, receives the left-hand component of every state
+// created: left_of[s] is the state of `a` that output state s was paired
+// from. It is what lets a caller carry a property of `a`'s states — an input
+// position, say — through a chain of compositions.
+Wfst compose(const Wfst& a, const Wfst& b, std::vector<int>* left_of = nullptr);
 
 // Drop states that are unreachable or from which no final state is reachable.
-Wfst connect(const Wfst& a);
+// `survivor_of`, when given, receives the old state id of each surviving one.
+Wfst connect(const Wfst& a, std::vector<int>* survivor_of = nullptr);
 
 // ---- search -----------------------------------------------------------------
 
@@ -95,6 +101,17 @@ struct Path {
 
 // Single-source shortest path (Dijkstra; all Sayso weights are >= 0).
 Path shortest_path(const Wfst& a);
+
+// The distance pass on its own, so one Dijkstra can be backtraced from many
+// destinations — which is what reading every prefix off a lattice needs.
+struct ShortestDistance {
+    std::vector<float> dist;
+    std::vector<int> from;
+    std::vector<Arc> via;
+    int start = -1;
+};
+ShortestDistance shortest_distance(const Wfst& a);
+Path backtrace(const Wfst& a, const ShortestDistance& distance, int state, float cost);
 
 // Cheapest output for a given input: compose an input chain, then decode.
 Path best_transduction(const Wfst& a, const std::vector<Label>& input);
@@ -111,10 +128,25 @@ Path best_transduction(const Wfst& a, const std::vector<Label>& input);
 // is just invert(A ∘ B) = invert(B) ∘ invert(A) applied down the list.
 class Cascade {
   public:
+    // A cascade holds its stages by reference, so every stage must outlive it.
+    // In practice each one is a function-local static built once; passing a
+    // temporary compiles cleanly and then dangles.
     Cascade& then(const Wfst& stage);
 
     Path apply(const std::vector<Label>& input) const;
     Path apply_inverse(const std::vector<Label>& input) const;
+
+    // Best path for *every* prefix of the input at once: result[k] transduces
+    // input[0..k), and result[0] is the empty prefix.
+    //
+    // The classifier needs exactly this. Asking a grammar about each span of a
+    // sentence separately re-walks the same prefixes over and over — a
+    // sentence with a long spelled-out numeral pays for its prefixes
+    // quadratically. Composing once against an all-final input chain and
+    // reading the answer off each input position collapses that to one
+    // composition per (span start, grammar), and one Dijkstra for all of them.
+    std::vector<Path> apply_prefixes(const std::vector<Label>& input) const;
+    std::vector<Path> apply_prefixes_inverse(const std::vector<Label>& input) const;
 
   private:
     // The labels that can begin and end an accepted input. The classifier asks
@@ -129,8 +161,12 @@ class Cascade {
     };
     const Boundary& boundary(bool inverse) const;
 
+    // The stages read backwards, built once on first inverse use.
+    const std::vector<const Wfst*>& inverse_stages() const;
+
     std::vector<const Wfst*> stages_;
     mutable std::vector<Wfst> inverted_;
+    mutable std::vector<const Wfst*> inverted_pointers_;
     mutable Boundary forward_, backward_;
 };
 

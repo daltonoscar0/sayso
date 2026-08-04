@@ -168,6 +168,17 @@ static void ambiguity_tests() {
               normalize("1/1/1905", Direction::TTS) == "january first nineteen oh five",
           "year readings are licensed by the date grammar, not by the digits");
 
+    // Speech recognisers do not hyphenate, so ITN has to hold a whole
+    // unhyphenated numeral in one span. This is what the spoken span cap is
+    // sized for, and it regressed once when the cap was too small.
+    check(normalize("one billion two hundred thirty four million five hundred sixty seven "
+                    "thousand eight hundred ninety",
+                    Direction::ITN) == "1234567890" &&
+              normalize("eight hundred forty six million one hundred sixty eight thousand "
+                        "nine hundred forty nine dollars and ninety nine cents",
+                        Direction::ITN) == "$846168949.99",
+          "unhyphenated numerals stay one span all the way to a billion");
+
     // Sayso converts number words wherever it finds them; "second" as a verb
     // is a genuine homograph the classifier has no context to resolve. Pinned
     // here so the behaviour is a decision rather than a surprise.
