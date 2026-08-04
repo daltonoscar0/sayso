@@ -1,0 +1,16 @@
+# Compiled binaries
+sayso
+wfst_tests
+number_tests
+money_date_tests
+pipeline_tests
+eval/sayso_eval
+
+# Object files
+*.o
+
+# Evaluation data (see eval/README.md)
+eval/data/*.tsv
+
+# macOS
+.DS_Store

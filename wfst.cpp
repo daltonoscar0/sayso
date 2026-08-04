@@ -1,0 +1,389 @@
+#include "wfst.h"
+
+#include <algorithm>
+#include <map>
+#include <queue>
+#include <unordered_map>
+
+namespace sayso {
+
+int Wfst::add_state(float final_weight) {
+    arcs_.emplace_back();
+    final_.push_back(final_weight);
+    return static_cast<int>(final_.size()) - 1;
+}
+
+size_t Wfst::num_arcs() const {
+    size_t n = 0;
+    for (const auto& v : arcs_) n += v.size();
+    return n;
+}
+
+namespace {
+
+// Copy `src` into `dst`, returning the offset its state ids were shifted by.
+int splice(Wfst& dst, const Wfst& src) {
+    int offset = dst.num_states();
+    for (int s = 0; s < src.num_states(); ++s) dst.add_state(src.final_weight(s));
+    for (int s = 0; s < src.num_states(); ++s)
+        for (const Arc& a : src.arcs(s)) {
+            Arc b = a;
+            b.next = a.next + offset;
+            dst.add_arc(s + offset, b);
+        }
+    return offset;
+}
+
+}  // namespace
+
+// ---- primitive machines -----------------------------------------------------
+
+Wfst empty_string_fst(float w) {
+    Wfst f;
+    int s = f.add_state(w);
+    f.set_start(s);
+    return f;
+}
+
+Wfst empty_fst() {
+    Wfst f;
+    f.set_start(f.add_state());
+    return f;
+}
+
+Wfst transducer(const std::vector<Label>& in, const std::vector<Label>& out,
+                float w) {
+    Wfst f;
+    int prev = f.add_state();
+    f.set_start(prev);
+    size_t n = std::max(in.size(), out.size());
+    if (n == 0) {
+        f.set_final(prev, w);
+        return f;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        int next = f.add_state();
+        Arc a;
+        a.ilabel = i < in.size() ? in[i] : kEpsilon;
+        a.olabel = i < out.size() ? out[i] : kEpsilon;
+        a.weight = i == 0 ? w : 0.0f;
+        a.next = next;
+        f.add_arc(prev, a);
+        prev = next;
+    }
+    f.set_final(prev, 0.0f);
+    return f;
+}
+
+// ---- rational operations ----------------------------------------------------
+
+Wfst union_of(const std::vector<Wfst>& parts) {
+    Wfst f;
+    int start = f.add_state();
+    f.set_start(start);
+    for (const Wfst& p : parts) {
+        if (p.start() < 0) continue;
+        int offset = splice(f, p);
+        Arc a;
+        a.next = p.start() + offset;
+        f.add_arc(start, a);
+    }
+    return f;
+}
+
+Wfst concat_of(const std::vector<Wfst>& parts) {
+    if (parts.empty()) return empty_string_fst();
+    Wfst f;
+    int offset = splice(f, parts[0]);
+    f.set_start(parts[0].start() + offset);
+    std::vector<int> tails;
+    for (int s = 0; s < parts[0].num_states(); ++s)
+        if (parts[0].is_final(s)) tails.push_back(s + offset);
+    std::vector<float> tail_weights;
+    for (int s = 0; s < parts[0].num_states(); ++s)
+        if (parts[0].is_final(s)) tail_weights.push_back(parts[0].final_weight(s));
+
+    for (size_t i = 1; i < parts.size(); ++i) {
+        const Wfst& p = parts[i];
+        int off = splice(f, p);
+        for (size_t k = 0; k < tails.size(); ++k) {
+            Arc a;
+            a.weight = tail_weights[k];
+            a.next = p.start() + off;
+            f.add_arc(tails[k], a);
+            f.set_final(tails[k], kInfinity);
+        }
+        tails.clear();
+        tail_weights.clear();
+        for (int s = 0; s < p.num_states(); ++s)
+            if (p.is_final(s)) {
+                tails.push_back(s + off);
+                tail_weights.push_back(p.final_weight(s));
+            }
+    }
+    return f;
+}
+
+Wfst closure(const Wfst& a) {
+    Wfst f;
+    int start = f.add_state(0.0f);
+    f.set_start(start);
+    if (a.start() < 0) return f;
+    int offset = splice(f, a);
+    Arc enter;
+    enter.next = a.start() + offset;
+    f.add_arc(start, enter);
+    for (int s = 0; s < a.num_states(); ++s)
+        if (a.is_final(s)) {
+            Arc back;
+            back.weight = a.final_weight(s);
+            back.next = start;
+            f.add_arc(s + offset, back);
+            f.set_final(s + offset, kInfinity);
+        }
+    return f;
+}
+
+Wfst optional_of(const Wfst& a) { return union_of({a, empty_string_fst()}); }
+
+Wfst reweight(const Wfst& a, float w) {
+    Wfst f;
+    int start = f.add_state();
+    f.set_start(start);
+    int offset = splice(f, a);
+    Arc e;
+    e.weight = w;
+    e.next = a.start() + offset;
+    f.add_arc(start, e);
+    return f;
+}
+
+// ---- relational operations --------------------------------------------------
+
+Wfst invert(const Wfst& a) {
+    Wfst out;
+    for (int s = 0; s < a.num_states(); ++s) out.add_state(a.final_weight(s));
+    out.set_start(a.start());
+    for (int s = 0; s < a.num_states(); ++s)
+        for (const Arc& arc : a.arcs(s)) {
+            Arc b = arc;
+            std::swap(b.ilabel, b.olabel);
+            out.add_arc(s, b);
+        }
+    return out;
+}
+
+namespace {
+
+Wfst project(const Wfst& a, bool to_input) {
+    Wfst out;
+    for (int s = 0; s < a.num_states(); ++s) out.add_state(a.final_weight(s));
+    out.set_start(a.start());
+    for (int s = 0; s < a.num_states(); ++s)
+        for (const Arc& arc : a.arcs(s)) {
+            Arc b = arc;
+            if (to_input) b.olabel = b.ilabel;
+            else b.ilabel = b.olabel;
+            out.add_arc(s, b);
+        }
+    return out;
+}
+
+}  // namespace
+
+Wfst project_input(const Wfst& a) { return project(a, true); }
+Wfst project_output(const Wfst& a) { return project(a, false); }
+
+Wfst compose(const Wfst& a, const Wfst& b) {
+    Wfst out;
+    if (a.start() < 0 || b.start() < 0) return empty_fst();
+
+    // A composed state is (state in a, state in b, filter). The filter keeps
+    // an epsilon on a's output tape from being paired with an epsilon on b's
+    // input tape in two different orders, which would duplicate paths.
+    using Triple = std::tuple<int, int, int>;
+    std::map<Triple, int> index;
+    std::vector<Triple> stack;
+
+    auto state_for = [&](int sa, int sb, int filter) {
+        Triple key{sa, sb, filter};
+        auto it = index.find(key);
+        if (it != index.end()) return it->second;
+        float fw = kInfinity;
+        if (a.is_final(sa) && b.is_final(sb))
+            fw = a.final_weight(sa) + b.final_weight(sb);
+        int id = out.add_state(fw);
+        index[key] = id;
+        stack.push_back(key);
+        return id;
+    };
+
+    out.set_start(state_for(a.start(), b.start(), 0));
+    while (!stack.empty()) {
+        Triple cur = stack.back();
+        stack.pop_back();
+        auto [sa, sb, filter] = cur;
+        int here = index[cur];
+
+        for (const Arc& x : a.arcs(sa)) {
+            if (x.olabel != kEpsilon) {
+                for (const Arc& y : b.arcs(sb)) {
+                    if (y.ilabel != x.olabel) continue;
+                    Arc c;
+                    c.ilabel = x.ilabel;
+                    c.olabel = y.olabel;
+                    c.weight = x.weight + y.weight;
+                    c.next = state_for(x.next, y.next, 0);
+                    out.add_arc(here, c);
+                }
+            } else {
+                // a writes nothing: either advance a alone, or pair the move
+                // with an epsilon read on b's side (allowed only from the
+                // neutral filter state, which is what stops the two orders of
+                // the same pair from both surviving).
+                if (filter == 0)
+                    for (const Arc& y : b.arcs(sb)) {
+                        if (y.ilabel != kEpsilon) continue;
+                        Arc c;
+                        c.ilabel = x.ilabel;
+                        c.olabel = y.olabel;
+                        c.weight = x.weight + y.weight;
+                        c.next = state_for(x.next, y.next, 0);
+                        out.add_arc(here, c);
+                    }
+                if (filter == 0 || filter == 1) {
+                    Arc c;
+                    c.ilabel = x.ilabel;
+                    c.weight = x.weight;
+                    c.next = state_for(x.next, sb, 1);
+                    out.add_arc(here, c);
+                }
+            }
+        }
+        for (const Arc& y : b.arcs(sb)) {
+            if (y.ilabel != kEpsilon) continue;
+            if (filter != 0 && filter != 2) continue;
+            Arc c;
+            c.olabel = y.olabel;
+            c.weight = y.weight;
+            c.next = state_for(sa, y.next, 2);
+            out.add_arc(here, c);
+        }
+    }
+    return out;
+}
+
+Wfst connect(const Wfst& a) {
+    int n = a.num_states();
+    if (a.start() < 0 || n == 0) return empty_fst();
+
+    std::vector<char> reachable(n, 0), coreachable(n, 0);
+    std::vector<std::vector<int>> back(n);
+    std::vector<int> stack{a.start()};
+    reachable[a.start()] = 1;
+    while (!stack.empty()) {
+        int s = stack.back();
+        stack.pop_back();
+        for (const Arc& arc : a.arcs(s)) {
+            back[arc.next].push_back(s);
+            if (!reachable[arc.next]) {
+                reachable[arc.next] = 1;
+                stack.push_back(arc.next);
+            }
+        }
+    }
+    for (int s = 0; s < n; ++s)
+        if (reachable[s] && a.is_final(s)) {
+            coreachable[s] = 1;
+            stack.push_back(s);
+        }
+    while (!stack.empty()) {
+        int s = stack.back();
+        stack.pop_back();
+        for (int p : back[s])
+            if (!coreachable[p]) {
+                coreachable[p] = 1;
+                stack.push_back(p);
+            }
+    }
+
+    std::vector<int> remap(n, -1);
+    Wfst out;
+    for (int s = 0; s < n; ++s)
+        if (reachable[s] && coreachable[s]) remap[s] = out.add_state(a.final_weight(s));
+    if (remap[a.start()] < 0) return empty_fst();
+    out.set_start(remap[a.start()]);
+    for (int s = 0; s < n; ++s) {
+        if (remap[s] < 0) continue;
+        for (const Arc& arc : a.arcs(s)) {
+            if (remap[arc.next] < 0) continue;
+            Arc b = arc;
+            b.next = remap[arc.next];
+            out.add_arc(remap[s], b);
+        }
+    }
+    return out;
+}
+
+// ---- search -----------------------------------------------------------------
+
+Path shortest_path(const Wfst& a) {
+    Path result;
+    int n = a.num_states();
+    if (a.start() < 0 || n == 0) return result;
+
+    std::vector<float> dist(n, kInfinity);
+    std::vector<int> from(n, -1);
+    std::vector<Arc> via(n);
+    using Entry = std::pair<float, int>;
+    std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> queue;
+    dist[a.start()] = 0.0f;
+    queue.push({0.0f, a.start()});
+
+    std::vector<char> done(n, 0);
+    while (!queue.empty()) {
+        auto [d, s] = queue.top();
+        queue.pop();
+        if (done[s]) continue;
+        done[s] = 1;
+        for (const Arc& arc : a.arcs(s)) {
+            float nd = d + arc.weight;
+            if (nd < dist[arc.next]) {
+                dist[arc.next] = nd;
+                from[arc.next] = s;
+                via[arc.next] = arc;
+                queue.push({nd, arc.next});
+            }
+        }
+    }
+
+    int best = -1;
+    float best_cost = kInfinity;
+    for (int s = 0; s < n; ++s) {
+        if (!a.is_final(s) || dist[s] == kInfinity) continue;
+        float total = dist[s] + a.final_weight(s);
+        if (total < best_cost) {
+            best_cost = total;
+            best = s;
+        }
+    }
+    if (best < 0) return result;
+
+    std::vector<Arc> path;
+    for (int s = best; s != a.start(); s = from[s]) path.push_back(via[s]);
+    std::reverse(path.begin(), path.end());
+    for (const Arc& arc : path) {
+        if (arc.ilabel != kEpsilon) result.ilabels.push_back(arc.ilabel);
+        if (arc.olabel != kEpsilon) result.olabels.push_back(arc.olabel);
+    }
+    result.weight = best_cost;
+    result.found = true;
+    return result;
+}
+
+Path best_transduction(const Wfst& a, const std::vector<Label>& input) {
+    Wfst chain = transducer(input, input);
+    return shortest_path(compose(chain, a));
+}
+
+}  // namespace sayso
