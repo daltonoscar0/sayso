@@ -514,7 +514,9 @@ Everything above is the synthetic slice. This is 5,000 sentences of Wikipedia fr
 Google's Kestrel and used as the reference. It is the only number here that measures agreement
 with something other than Sayso's own conventions.
 
-**TTS 68.7%**, relaxed scoring.
+**TTS 68.8%** on the 5,000 sentences the grammars were developed against, and **65.9%** on a
+disjoint 5,000 from later in the same shard that nothing was ever tuned on. The second is the
+honest number; the gap between them is the price of having looked at the first.
 
 | class | n | TTS |
 |---|---:|---:|
@@ -526,7 +528,25 @@ with something other than Sayso's own conventions.
 | MONEY | 40 | 95.0% |
 | ORDINAL | 92 | 83.7% |
 | TIME | 6 | 83.3% |
-| **all** | **5,000** | **68.7%** |
+| **all** | **5,000** | **68.8%** |
+
+And held out — never read while developing:
+
+| class | n | TTS |
+|---|---:|---:|
+| CARDINAL | 978 | 85.6% |
+| DATE | 3,764 | 59.5% |
+| DECIMAL | 51 | 80.4% |
+| MEASURE | 66 | 84.8% |
+| MONEY | 40 | 95.0% |
+| ORDINAL | 89 | 85.4% |
+| FRACTION / TIME | 6 each | 50.0% / 66.7% |
+| **all** | **5,000** | **65.9%** |
+
+MEASURE falls furthest, by 5.8 points, and that is exactly where overfitting would show: its
+unit table was written by reading off which units the *first* slice happened to contain. MONEY,
+whose grammar is structural rather than tabular, does not move at all. The rest sit within a
+few points, which is about what one shard's worth of Wikipedia variance looks like.
 
 How it got there, each step measured on the same slice:
 
@@ -535,7 +555,7 @@ How it got there, each step measured on the same slice:
 | four classes, year reading licensed only inside a date | 40.0% |
 | a bare four-digit number reads as a year | 62.8% |
 | the written shapes a corpus uses — `$26.6bn`, `2½`, `10am`, `18:00`, `Jun 29` | 64.3% |
-| `DECADE`, `RANGE`, `ABBREV`, `LETTERS`, Roman numerals, sentence-final full stops | **68.7%** |
+| `DECADE`, `RANGE`, `ABBREV`, `LETTERS`, Roman numerals, sentence-final full stops | **68.8%** |
 
 **The ITN column is not reported here, because it would not mean anything.** The corpus has no
 canonical-written column, so ITN can only be scored against the written one — and that column
