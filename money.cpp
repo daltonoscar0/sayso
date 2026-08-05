@@ -138,8 +138,12 @@ Wfst build_money() {
         for (const char* m : kMagnitudes)
             magnitudes.push_back(
                 concat_of({chars_in(" "), transducer(chars_of(m), words_of({m}))}));
+        // A space before the suffix is written too — "$5.4 M" as often as
+        // "$5.4M" — and without it MEASURE claimed the amount as metres.
         for (const MagnitudeSuffix& s : kMagnitudeSuffixes)
-            magnitudes.push_back(rule(s.written, {s.spoken}, kLetterMagnitudePenalty));
+            magnitudes.push_back(concat_of({
+                union_of({empty_string_fst(), chars_in(" ")}),
+                rule(s.written, {s.spoken}, kLetterMagnitudePenalty)}));
         branches.push_back(reweight(concat_of({symbol, decimal, union_of(magnitudes),
                                                words_out({c.major_plural})}),
                                     kSpelledMagnitudePenalty));

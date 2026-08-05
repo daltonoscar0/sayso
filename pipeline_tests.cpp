@@ -410,6 +410,23 @@ static void review_regression_tests() {
               normalize("one point eight million", Direction::ITN) == "1.8 million",
           "a decimal keeps its magnitude word");
 
+    // A currency amount keeps its cents when a magnitude follows. MEASURE used
+    // to claim ".4 M" as metres, because its amount admitted an elided leading
+    // zero — which no measurement is ever written with — and the two outputs
+    // met as the non-word "dollarspoint".
+    check(normalize("Sells $5.4 M. Central Park", Direction::TTS) ==
+              "Sells five point four million dollars. Central Park" &&
+              normalize("5.4 M of cable", Direction::TTS) ==
+                  "five point four meters of cable",
+          "a magnitude after an amount is money, without one it is metres");
+
+    // A thousands comma and a one-digit cents field are each affordable alone;
+    // only their sum lost, and the amount came apart with a literal comma
+    // reaching the spoken tape.
+    check(normalize("$1,234.5", Direction::TTS) ==
+              "one thousand two hundred thirty-four dollars and fifty cents",
+          "a comma and short cents together still make one amount");
+
     // Folded, "Xi" is a surname and "XI" a cricket team as often as either is
     // eleven.
     check(normalize("Xi Jinping met Zhu Xi scholars.", Direction::TTS) ==

@@ -60,7 +60,12 @@ constexpr float kZeroDollarsPenalty = 1.0f;
 constexpr float kNoAndPenalty = 0.4f;
 
 // One-digit cents ("$2.5" for two dollars fifty), so that ITN writes "$2.50".
-constexpr float kShortCentsPenalty = 0.5f;
+// Down from 0.5: stacked on kCommaCost it made the whole-span reading of
+// "$1,234.5" dearer than MONEY("$1") plus PLAIN(",") plus DECIMAL("234.5"), so
+// the amount came apart and a literal comma reached the spoken tape. Each
+// feature was affordable alone and only their sum lost; 0.3 made it an exact
+// tie, which is no better than losing.
+constexpr float kShortCentsPenalty = 0.25f;
 
 // Writing ".00" for a whole amount. "$3" and "$3.00" are the same words, so
 // without this the two branches tie and ITN would pick either.

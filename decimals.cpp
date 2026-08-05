@@ -44,11 +44,15 @@ Wfst build_decimal_core() {
 
 // As above, but the point is optional, so a bare cardinal is accepted too and
 // the cardinal machine appears once rather than in both halves of a union.
+//
+// No elided-zero branch here, unlike decimal_core_fst(). An amount in front of
+// a unit is always written with its integer part, and admitting ".4" as one
+// let MEASURE claim the cents of a currency amount: "$5.4 M" came apart into
+// MONEY("$5") and MEASURE(".4 M"), whose outputs meet as the non-word
+// "dollarspoint".
 Wfst build_number_or_decimal() {
-    std::vector<Wfst> branches{concat_of(
-        {cardinal_core_fst(), union_of({empty_string_fst(), decimal_tail()})})};
-    for (Wfst& elided : elided_zero_branches()) branches.push_back(elided);
-    return connect(union_of(branches));
+    return connect(concat_of(
+        {cardinal_core_fst(), union_of({empty_string_fst(), decimal_tail()})}));
 }
 
 // The magnitude a decimal may carry. This grammar was written without one, on
