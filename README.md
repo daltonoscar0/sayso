@@ -170,7 +170,8 @@ Or by hand, in Scalpel's style:
 ```bash
 g++ -std=c++17 -O2 -o sayso \
     sayso_main.cpp wfst.cpp symbols.cpp numbers.cpp money.cpp dates.cpp \
-    decimals.cpp fractions.cpp times.cpp measures.cpp \
+    decimals.cpp fractions.cpp times.cpp measures.cpp decades.cpp \
+    abbrev.cpp letters.cpp ranges.cpp \
     text.cpp classify.cpp normalizer.cpp \
     ../Scalpel/tokenizer.cpp ../Scalpel/char_classes.cpp -I.
 ```
@@ -294,7 +295,7 @@ accumulating cheap internal decisions.
 | `kPluralPreferenceMargin` | 0.01 | reads `one dollars`, writes `one dollar` |
 | `kZeroDollarsPenalty` | 1.0 | reads `zero dollars and ninety-nine cents`, writes `$0.99` |
 | `kZeroPadPenalty` | 0.3 | reads `03/14`, writes `3/14`; also `03:30` |
-| `kIso / kMonthName / kDayFirstFormatPenalty` | 0.5 / 0.6 / 0.7 | reads four date formats, writes `M/D/YYYY` |
+| `kIso / kMonthName / kDayFirstFormatPenalty` | 0.3 / 0.6 / 0.7 | reads four date formats, writes `M/D/YYYY` |
 | `kTwoThousandsPenalty` | 1.2 | `2005` is `two thousand five`, `1905` is `nineteen oh five` |
 | `kCardinalYearPenalty` | 0.6 | `2015` is `twenty fifteen`, not `two thousand fifteen` |
 | `kUnspokenLeadingZeroPenalty` | 0.4 | reads `0.5` as `point five` |
@@ -305,11 +306,11 @@ accumulating cheap internal decisions.
 | `kDottedMeridiemPenalty` | 0.4 | reads `p.m.`, writes `pm` |
 | `kMeridiemSpacingPenalty` | 0.3 | reads `3:30pm`, writes `3:30 pm` |
 | `kMeasureSpacingPenalty` | 0.3 | reads `5km` and `50 %`, writes `5 km` and `50%` |
-| `kAltUnitSpellingPenalty` | 0.3 | reads `lbs`, writes `lb` |
+| `kAltUnitSpellingPenalty` | 0.05 | reads `lbs`, writes `lb` |
 | `kFoldedCasePenalty` | 0.1 | reads `°c` and `mhz`, writes `°C` and `MHz` |
 | `kCurrencyHomographPenalty` | 0.25 | `three pounds` is sterling, `5 lb` is weight |
 | `kPlainPerChar` | 1.0 | per character of untouched text; this is what makes long spans win |
-| class entry costs | 0.05 – 0.2 | `MONEY($25)` beats `PLAIN($) + CARDINAL(25)` |
+| class entry costs | 0.05 – 0.5 | `MONEY($25)` beats `PLAIN($) + CARDINAL(25)` |
 
 Three of the newer entries are the same idiom seen from an odd angle. `kBareHourPenalty` is
 one weight leaning opposite ways in two branches, because whether a round hour is spoken
@@ -333,7 +334,7 @@ Where nondeterminism arises from inversion — `twenty five` against `twenty-fiv
 
 ## Accuracy
 
-Run `cd eval && ./generate_slice && ./sayso_eval` (add `--relaxed` for the second table).
+Run `cd eval && ./generate_slice data/synthetic_slice.tsv && ./sayso_eval data/synthetic_slice.tsv` (add `--relaxed` for the second table).
 Numbers are from the 500-example synthetic slice; read the caveat below before drawing
 conclusions from the NeMo columns.
 

@@ -70,8 +70,10 @@ Wfst build_range() {
     // year-month prefix of an ISO date. Refusing that shape outright is what
     // keeps "2011-11-11" a date; leaving it to the entry cost worked only
     // while zero-padding happened to make the alternative expensive.
-    Wfst not_a_month = union_of({one_digit(), two_digits_from(13), p.three_nz,
-                                 four_digits(), measure});
+    // One-digit months count too: "2013-7-2" is an unpadded ISO date, and a
+    // guard that only refused "01"-"12" let RANGE take "2013-7".
+    Wfst not_a_month = union_of({two_digits_from(13), p.three_nz, four_digits(),
+                                 measure});
 
     // Hyphen only. The en dash does not occur in the corpus at all and every
     // one of the 11,063 em dashes is silent; the colon is 95.7% bibliographic

@@ -354,6 +354,62 @@ static void later_class_tests() {
           "five of the later classes in one sentence");
 }
 
+// ---- what an adversarial review found ---------------------------------------
+//
+// Every check here is a defect a reviewer reproduced against a built binary,
+// counted in the corpus, and which no existing test caught.
+
+static void review_regression_tests() {
+    // A year in 2000-2009 costs the *cardinal* reading nothing, because there
+    // that reading is the ordinary one. Charging it kCardinalYearPenalty made
+    // every date carrying such a year 0.6 dearer, and 9.8% of the shard's ISO
+    // dates lost to three cardinals and two minus signs.
+    check(normalize("2007-10-19", Direction::TTS) == "october nineteenth two thousand seven" &&
+              normalize("2015-10-19", Direction::TTS) == "october nineteenth twenty fifteen" &&
+              normalize("2000-01-01", Direction::TTS) == "january first two thousand",
+          "an ISO date with a 2000s year is still a date");
+
+    // Read backwards a clock and a year are the same words. TIME entered at
+    // 0.05 and won every one: 588 of the 1000 years in 1100-2099 failed to
+    // round-trip, "nineteen forty five" writing as 19:45.
+    check(normalize("nineteen forty five", Direction::ITN) == "1945" &&
+              normalize("twenty eleven", Direction::ITN) == "2011" &&
+              normalize("three thirty p m", Direction::ITN) == "3:30 pm" &&
+              normalize("ten a m", Direction::ITN) == "10:00 am",
+          "a spoken year is a year, and a clock still needs its meridiem");
+
+    // The adapter splits a sentence-final stop off, so an abbreviation branch
+    // that also read the stop claimed both tokens and deleted the punctuation.
+    check(normalize("She works for Acme Ltd. The deal closed.", Direction::TTS) ==
+              "She works for Acme limited. The deal closed." &&
+              normalize("He bought apples, oranges, etc.", Direction::TTS) ==
+                  "He bought apples, oranges, etcetera.",
+          "an abbreviation at a sentence end keeps the full stop");
+
+    // "a" plus an ordinal is ordinary English, and a fraction span covering
+    // both was cheaper than ORDINAL plus the cost of leaving the article
+    // alone — so the article was absorbed into the numerator and vanished.
+    check(normalize("a nineteenth century painter", Direction::ITN) ==
+              "a 19th century painter" &&
+              normalize("a third and final season", Direction::ITN) ==
+                  "a 3rd and final season",
+          "an indefinite article before an ordinal is not a numerator");
+
+    // PLAIN is priced per character, so "million" at 7.0 lost to CARDINAL
+    // reading "five million" as 5000000 for 0.21: the round trip was wrong by
+    // six orders of magnitude.
+    check(normalize("three point five million", Direction::ITN) == "3.5 million" &&
+              normalize("one point eight million", Direction::ITN) == "1.8 million",
+          "a decimal keeps its magnitude word");
+
+    // Folded, "Xi" is a surname and "XI" a cricket team as often as either is
+    // eleven.
+    check(normalize("Xi Jinping met Zhu Xi scholars.", Direction::TTS) ==
+              "Xi Jinping met Zhu Xi scholars." &&
+              normalize("World War II", Direction::TTS) == "World War two",
+          "the numerals that are also names are left alone");
+}
+
 int main() {
     tokenizer_tests();
     classify_tests();
@@ -363,6 +419,7 @@ int main() {
     class_competition_tests();
     one_directional_tests();
     later_class_tests();
+    review_regression_tests();
     std::cout << "\nTests run:" << run << "\nTests failed: " << failed << "\n";
     return failed == 0 ? 0 : 1;
 }

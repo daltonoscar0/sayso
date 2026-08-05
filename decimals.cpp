@@ -51,6 +51,22 @@ Wfst build_number_or_decimal() {
     return connect(union_of(branches));
 }
 
+// The magnitude a decimal may carry. This grammar was written without one, on
+// the reasoning that "3.5 million" comes out right anyway with DECIMAL taking
+// "3.5" and PLAIN copying "million" through. That is true going forwards and
+// false coming back: PLAIN is priced per character, so "million" costs 7.0,
+// and CARDINAL reading "five million" as 5000000 for 0.21 undercuts the whole
+// thing. "three point five million" came back as "3 point 5000000" — a round
+// trip that is not merely unidiomatic but wrong by six orders of magnitude.
+Wfst optional_magnitude() {
+    static const char* kMagnitudes[] = {"thousand", "million", "billion", "trillion"};
+    std::vector<Wfst> parts{empty_string_fst()};
+    for (const char* m : kMagnitudes)
+        parts.push_back(
+            concat_of({chars_in(" "), transducer(chars_of(m), words_of({m}))}));
+    return union_of(parts);
+}
+
 // An optional leading sign, concatenated once rather than once per branch:
 // A·B ∪ A·C is A·(B ∪ C), and the machine on the right of that is three times
 // smaller when B and C both contain the whole decimal grammar.
@@ -75,8 +91,11 @@ const Wfst& number_or_decimal_fst() {
 }
 
 const Cascade& decimal_grammar() {
+    // The magnitude is on this cascade only, not on decimal_core_fst(): the
+    // measure grammar embeds the core, and "2.5 million km" is not worth
+    // another copy of these branches inside every unit.
     static const Wfst signed_decimal =
-        concat_of({optional_sign(), decimal_core_fst()});
+        concat_of({optional_sign(), decimal_core_fst(), optional_magnitude()});
     static const Wfst joined = hyphenated(signed_decimal);
     static const Cascade grammar = Cascade().then(joined);
     return grammar;

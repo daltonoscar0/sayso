@@ -77,21 +77,27 @@ Wfst denominator(bool plural, float extra) {
     return union_of(parts);
 }
 
-// A numerator of exactly one, in its two readings. Which of them is free
-// depends on where the fraction sits, so the caller passes the costs in.
-Wfst numerator_one(float article_cost, float one_cost) {
-    return union_of({
-        rule("1", {"a"}, article_cost),
-        rule("1", {"one"}, one_cost),
-    });
+// A numerator of exactly one. "a" is only offered inside a mixed number,
+// where "and" precedes it and there is nothing else it could be.
+//
+// Standing alone it was a menace, because it runs backwards: "a" plus an
+// ordinal is an ordinary English phrase, and the fraction span covering both
+// is cheaper than ORDINAL plus the per-character cost of leaving the article
+// uncovered. "a nineteenth century painter" became "1/19 century painter" —
+// the article not misread but absorbed into the numerator and gone from the
+// output. "a third and final season" went the same way.
+Wfst numerator_one(bool allow_article, float one_cost) {
+    std::vector<Wfst> parts{rule("1", {"one"}, one_cost)};
+    if (allow_article) parts.push_back(rule("1", {"a"}));
+    return union_of(parts);
 }
 
 // Numerator, slash, agreeing denominator. The singular branch only fits a
 // numerator of exactly one; the margin on the plural branch is what makes the
 // singular win wherever both do.
-Wfst slashed_body(float article_cost, float one_cost) {
+Wfst slashed_body(bool allow_article, float one_cost) {
     return union_of({
-        concat_of({numerator_one(article_cost, one_cost), chars_in("/"),
+        concat_of({numerator_one(allow_article, one_cost), chars_in("/"),
                    denominator(false, 0.0f)}),
         concat_of({cardinal_positive_fst(), chars_in("/"),
                    denominator(true, kPluralPreferenceMargin)}),
@@ -117,13 +123,13 @@ const VulgarFraction kVulgarFractions[] = {
     {"⅜", 3, "eighths"},   {"⅝", 5, "eighths"},  {"⅞", 7, "eighths"},
 };
 
-Wfst vulgar_body(float article_cost, float one_cost) {
+Wfst vulgar_body(bool allow_article, float one_cost) {
     static const char* kNumerators[8] = {"", "one", "two",  "three",
                                          "four", "five", "six", "seven"};
     std::vector<Wfst> parts;
     for (const VulgarFraction& v : kVulgarFractions) {
         if (v.numerator == 1) {
-            parts.push_back(rule(v.written, {"a", v.denominator}, article_cost));
+            if (allow_article) parts.push_back(rule(v.written, {"a", v.denominator}));
             parts.push_back(rule(v.written, {"one", v.denominator}, one_cost));
         } else {
             parts.push_back(
@@ -134,21 +140,22 @@ Wfst vulgar_body(float article_cost, float one_cost) {
 }
 
 Wfst build_fraction() {
-    // Standing alone the numerator is "one"; after a whole number it is "a".
+    // Standing alone the numerator is "one" and only "one"; after a whole
+    // number, where "and" precedes it, "a" is free and "one" costs a hair.
     Wfst simple = union_of({
-        slashed_body(kArticleNumeratorPenalty, 0.0f),
-        vulgar_body(kArticleNumeratorPenalty, 0.0f),
+        slashed_body(false, 0.0f),
+        vulgar_body(false, 0.0f),
     });
     // "2 1/2" needs its space — without one, "21/2" would read as a mixed
     // number rather than as twenty-one halves. A precomposed character cannot
     // be misread that way, so there the space is optional.
     Wfst mixed = union_of({
         concat_of({cardinal_positive_fst(), chars_in(" "), words_out({"and"}),
-                   slashed_body(0.0f, kArticleNumeratorPenalty)}),
+                   slashed_body(true, kArticleNumeratorPenalty)}),
         concat_of({cardinal_positive_fst(),
                    union_of({chars_in(" ", kMixedNoSpacePenalty), empty_string_fst()}),
                    words_out({"and"}),
-                   vulgar_body(0.0f, kArticleNumeratorPenalty)}),
+                   vulgar_body(true, kArticleNumeratorPenalty)}),
     });
 
     // The sign is concatenated onto the union rather than distributed over it:

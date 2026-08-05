@@ -155,13 +155,17 @@ static void fraction_tests() {
                 true),
           "mixed numbers take 'and', and an article for a numerator of one");
 
-    // Standing alone the numerator is "one"; after a whole number it is "a".
-    // One weight, leaning opposite ways in the two branches.
+    // Standing alone the numerator is "one" and only "one". "a" is offered
+    // after a whole number, where "and" precedes it — and nowhere else,
+    // because it runs backwards: a fraction span covering the article of
+    // "a nineteenth century painter" is cheaper than ORDINAL plus the
+    // per-character cost of leaving "a" alone, and the article is absorbed
+    // into the numerator rather than merely misread.
     check(tts(fraction_grammar(), "1/2") == "one half" &&
               tts(fraction_grammar(), "2 1/2") == "two and a half" &&
-              itn(fraction_grammar(), "a half") == "1/2" &&
-              itn(fraction_grammar(), "two and one half") == "2 1/2",
-          "'one half' alone, 'and a half' after a whole number");
+              itn(fraction_grammar(), "two and one half") == "2 1/2" &&
+              itn(fraction_grammar(), "a half") == "<none>",
+          "'one half' alone, 'and a half' only after a whole number");
 
     check(itn(fraction_grammar(), "three fourths") == "3/4" &&
               tts(fraction_grammar(), "3/4") == "three quarters",

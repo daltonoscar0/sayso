@@ -139,10 +139,6 @@ constexpr float kCardinalDayPenalty = 0.8f;
 
 // ---- inside the abbreviation and letter grammars -----------------------------
 
-// The full stop an abbreviation may carry: "vol." for "vol". Scalpel usually
-// splits it off as its own token, so this is belt and braces.
-constexpr float kAbbreviationDotPenalty = 0.2f;
-
 // A dotted acronym whose last letter has lost its stop: "U.S" for "U.S.". The
 // path must still contain one stop, which is what keeps a bare "a" out.
 constexpr float kUndottedFinalLetterPenalty = 0.3f;
@@ -152,8 +148,6 @@ constexpr float kUndottedFinalLetterPenalty = 0.3f;
 // win. That is the whole reason Roman numerals live inside the cardinal
 // grammar rather than in a class of their own.
 constexpr float kRomanNumeralPenalty = 0.5f;
-
-// ---- inside the range grammar ------------------------------------------------
 
 // ---- inside the decade grammar ----------------------------------------------
 
@@ -272,7 +266,15 @@ constexpr float kPlainPerChar = 1.0f;
 // rest because its span shape — number, slash, number — is a prefix of a date.
 constexpr float kMoneyEntry = 0.05f;
 constexpr float kDateEntry = 0.05f;
-constexpr float kTimeEntry = 0.05f;
+// Dearer than CARDINAL, and that ordering is the whole point. Read backwards,
+// a clock time and a year are the same words: "nineteen forty five" fits
+// TIME("19:45") and CARDINAL("1945") equally, and at 0.05 the clock won every
+// one of them — 588 of the 1000 years in 1100-2099 failed to round-trip, and
+// 14% of the corpus's spoken sentences grew a colon. Years are overwhelmingly
+// the commoner reading of a bare pair, so CARDINAL takes it and TIME keeps
+// everything a cardinal cannot span: "3:30" written, "three thirty p m"
+// spoken. The cost is that a bare spoken "twelve thirty" writes as 1230.
+constexpr float kTimeEntry = 0.25f;
 constexpr float kDecadeEntry = 0.05f;
 constexpr float kAbbreviationEntry = 0.05f;
 constexpr float kLettersEntry = 0.05f;

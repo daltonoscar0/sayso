@@ -136,8 +136,11 @@ static void abbreviation_tests() {
                 false),
           "abbreviations expand");
 
-    check(tts(abbreviation_grammar(), "vol.") == "volume",
-          "a trailing full stop is read");
+    // No trailing-stop branch: the adapter splits a final stop off a token
+    // that has no other, so "Ltd." arrives as two tokens — and a branch
+    // reading "ltd." would claim both and swallow the sentence's punctuation.
+    check(tts(abbreviation_grammar(), "vol.") == "<none>",
+          "a trailing full stop belongs to the sentence, not the abbreviation");
 
     // Excluded because the ordinary word is far commoner than the
     // abbreviation: "no" is the word "no" 8,805 times against 288 expansions.
@@ -196,6 +199,14 @@ static void roman_tests() {
                 },
                 false),
           "Roman numerals read as cardinals");
+
+    // "xi", "vi" and "ix" are omitted with the single letters: folded, they
+    // are the surname Xi and the cricket "Second XI", and between them they
+    // are most of the false positives this table produces on the corpus.
+    check(tts(cardinal_grammar(), "xi") == "<none>" &&
+              tts(cardinal_grammar(), "vi") == "<none>" &&
+              tts(cardinal_grammar(), "ix") == "<none>",
+          "the numerals that are also names are omitted too");
 
     // Read, never written: ITN's "two" meets "2" at a hair and "II" at a real
     // penalty. That is the whole reason they live inside the cardinal grammar

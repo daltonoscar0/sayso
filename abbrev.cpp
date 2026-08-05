@@ -46,15 +46,14 @@ const std::vector<Abbreviation>& abbreviations() {
 }
 
 Wfst build_abbreviation() {
+    // No trailing-stop branch. The adapter in text.cpp splits a final full
+    // stop off a token that has no other, so "Ltd." reaches CLASSIFY as two
+    // tokens — and a branch reading "ltd." would then claim both and swallow
+    // the sentence's punctuation: "Acme Ltd. The deal closed." came out as
+    // "Acme limited The deal closed." 593 sentences in the shard end this way.
     std::vector<Wfst> parts;
-    for (const Abbreviation& a : abbreviations()) {
+    for (const Abbreviation& a : abbreviations())
         parts.push_back(rule(a.written, a.spoken));
-        // The full stop an abbreviation is often written with. Scalpel splits
-        // it off as its own token for these shapes, so this branch only fires
-        // where it did not — but it costs one arc to be safe.
-        parts.push_back(
-            rule(std::string(a.written) + ".", a.spoken, kAbbreviationDotPenalty));
-    }
     return connect(union_of(parts));
 }
 
