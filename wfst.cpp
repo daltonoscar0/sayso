@@ -285,10 +285,23 @@ Wfst compose(const Wfst& a, const Wfst& b, std::vector<int>* left_of) {
     return out;
 }
 
+// When nothing survives, the result is empty_fst() — which has one state, not
+// none. `survivor_of` has to gain an entry for it or the invariant callers
+// rely on, one entry per state of the result, silently breaks: run_prefix_
+// stages indexed mapping[0] into an empty vector on every span no grammar
+// matched, which AddressSanitizer catches and an ordinary build does not.
+//
+// The entry names the original start. That state does survive, in the only
+// sense left: it is still the start, with everything unreachable from it or
+// unable to reach a final state trimmed away.
 Wfst connect(const Wfst& a, std::vector<int>* survivor_of) {
     int n = a.num_states();
     if (survivor_of) survivor_of->clear();
-    if (a.start() < 0 || n == 0) return empty_fst();
+    auto nothing_survives = [&] {
+        if (survivor_of) survivor_of->assign(1, a.start() < 0 ? 0 : a.start());
+        return empty_fst();
+    };
+    if (a.start() < 0 || n == 0) return nothing_survives();
 
     std::vector<char> reachable(n, 0), coreachable(n, 0);
     std::vector<std::vector<int>> back(n);
@@ -327,7 +340,7 @@ Wfst connect(const Wfst& a, std::vector<int>* survivor_of) {
             remap[s] = out.add_state(a.final_weight(s));
             if (survivor_of) survivor_of->push_back(s);
         }
-    if (remap[a.start()] < 0) return empty_fst();
+    if (remap[a.start()] < 0) return nothing_survives();
     out.set_start(remap[a.start()]);
     for (int s = 0; s < n; ++s) {
         if (remap[s] < 0) continue;

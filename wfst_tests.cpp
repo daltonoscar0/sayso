@@ -189,6 +189,23 @@ static void connect_tests() {
     Wfst trimmed = connect(f);
     check(trimmed.num_states() == 2, "connect drops non-coaccessible states");
     check(transduce(trimmed, "1") == "one", "connect keeps the surviving path");
+
+    // survivor_of must have one entry per state of the *result*, including
+    // when nothing survives — connect returns empty_fst() there, which has one
+    // state, not none. Leaving the vector empty made run_prefix_stages index
+    // past its end on every span no grammar matched: an out-of-bounds read on
+    // essentially every sentence, invisible without a sanitiser.
+    Wfst no_final;
+    no_final.set_start(no_final.add_state());  // reachable, but never final
+    std::vector<int> survivors;
+    Wfst nothing = connect(no_final, &survivors);
+    check(survivors.size() == static_cast<size_t>(nothing.num_states()),
+          "connect leaves survivor_of the same size as the machine it returns");
+
+    std::vector<int> live;
+    Wfst kept = connect(f, &live);
+    check(live.size() == static_cast<size_t>(kept.num_states()),
+          "and does so when states do survive");
 }
 
 static void shortest_path_tests() {

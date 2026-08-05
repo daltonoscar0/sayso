@@ -153,7 +153,7 @@ Wfst build_fraction() {
         concat_of({cardinal_positive_fst(), chars_in(" "), words_out({"and"}),
                    slashed_body(true, kArticleNumeratorPenalty)}),
         concat_of({cardinal_positive_fst(),
-                   union_of({chars_in(" ", kMixedNoSpacePenalty), empty_string_fst()}),
+                   union_of({chars_in(" "), empty_string_fst(kMixedNoSpacePenalty)}),
                    words_out({"and"}),
                    vulgar_body(true, kArticleNumeratorPenalty)}),
     });

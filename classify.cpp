@@ -135,9 +135,17 @@ std::vector<Segment> classify(const std::string& input,
     // the span text is the expensive part of the key, and building it once per
     // span start instead of once per (span start, class) is most of what the
     // warm path costs once the grammars themselves are all cache hits.
+    // The map is a function-static and nothing trims it, so a long-lived
+    // process would grow without bound on novel text. The cap is generous —
+    // a real corpus shows its vocabulary of numbers, amounts and dates within
+    // its first few hundred sentences, so the warm path is warm long before
+    // this — and clearing outright rather than evicting one entry keeps the
+    // bookkeeping to a counter.
     using Readings = std::vector<std::pair<float, std::string>>;
     using SpanReadings = std::vector<Readings>;  // indexed as grammars()
     static std::unordered_map<std::string, SpanReadings> cache;
+    constexpr size_t kMaxCachedSpans = 200000;
+    if (cache.size() > kMaxCachedSpans) cache.clear();
 
     std::vector<Candidate> candidates;
     Wfst lattice;
@@ -176,11 +184,23 @@ std::vector<Segment> classify(const std::string& input,
                 std::vector<Path> paths =
                     dir == Direction::TTS ? grammar.grammar->apply_prefixes(span.labels)
                                           : grammar.grammar->apply_prefixes_inverse(span.labels);
+                // Only up to the last prefix this grammar actually read. The
+                // overwhelming majority of (span, class) pairs match nothing
+                // at all, and storing a full-length vector of misses for each
+                // of them was 99.95% of what the cache held — 4.5 GB over
+                // thirty thousand lines of corpus. A short vector reads the
+                // same, because the lookup below already treats a position
+                // past the end as no candidate.
+                size_t last_found = 0;
+                for (size_t k = 0; k < paths.size(); ++k)
+                    if (paths[k].found) last_found = k + 1;
+
                 Readings readings;
-                readings.reserve(paths.size());
-                for (const Path& p : paths)
-                    readings.emplace_back(p.found ? p.weight : kInfinity,
-                                          p.found ? render(p.olabels) : std::string());
+                readings.reserve(last_found);
+                for (size_t k = 0; k < last_found; ++k)
+                    readings.emplace_back(
+                        paths[k].found ? paths[k].weight : kInfinity,
+                        paths[k].found ? render(paths[k].olabels) : std::string());
                 entry.push_back(std::move(readings));
             }
             hit = cache.emplace(std::move(key), std::move(entry)).first;

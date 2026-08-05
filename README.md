@@ -428,10 +428,10 @@ them against each other in one sitting or not at all:
 |---|---:|---:|---:|
 | four-class build | 4 | 262/s | 62,500/s |
 | eight-class build | 8 | 283/s | 76,700/s |
-| this build | **12** | **237/s** | **70,900/s** |
+| this build | **12** | **237/s** | **79,000/s** |
 
-Three times the semiotic classes for 10% off the cold path, and the warm path still 13% faster
-than it was with four. The eight-class row is where the factoring below paid off; the last four
+Three times the semiotic classes for 10% off the cold path, and the warm path 26% faster than
+it was with four. The eight-class row is where the factoring below paid off; the last four
 classes are what it bought.
 
 All three rows are medians of four runs, taken in one session, alternating between the builds
@@ -491,10 +491,17 @@ concatenation — it prepends a single epsilon arc, and the tropical semiring su
 so the cost lands on the same total wherever it sits — which is what lets a penalised branch
 share its prefix with an unpenalised one instead of duplicating it.
 
-The remaining change is in the classifier: the span cache now holds every class's answers
-under one key rather than one entry per class. Building the span-text key once per span start
-instead of once per (span start, class) is most of what the warm path costs once the grammars
-are all cache hits, and it is worth about 1.6× on that path.
+The remaining changes are in the classifier's span cache. It holds every class's answers under
+one key rather than one entry per class, because the span text is the expensive part of the key
+and building it once per span start rather than once per (span start, class) is most of what
+the warm path costs once the grammars are all cache hits.
+
+And it stores, for each class, only as far as the last prefix that class actually read. The
+overwhelming majority of (span, class) pairs match nothing at all, and a full-length vector of
+misses for every one of them was 99.95% of what the cache held: **4.58 GB of resident memory
+over thirty thousand lines of corpus, against 0.13 GB now** — with the warm path slightly
+faster for the better locality. The map is also capped, since nothing trimmed it and a
+long-lived process would have grown without bound on novel text.
 
 DATE is now the most expensive grammar in the library and is not helped by any of this — its
 cost is its size, four written formats composed against a canonical machine, and factoring has
