@@ -1,0 +1,85 @@
+#include "decimals.h"
+
+#include <string>
+#include <vector>
+
+#include "numbers.h"
+#include "weights.h"
+
+namespace sayso {
+
+namespace {
+
+std::string digit(int d) { return std::string(1, static_cast<char>('0' + d)); }
+
+// One or more digits, each spoken on its own. Free, unlike the cardinal
+// grammar's per-digit fallback: after a decimal point this is not a fallback,
+// it is the reading.
+Wfst fractional_digits() {
+    std::vector<Wfst> digits;
+    for (int d = 0; d <= 9; ++d) digits.push_back(rule(digit(d), {digit_word(d)}));
+    return concat_of({union_of(digits), closure(union_of(digits))});
+}
+
+// The point and everything after it — what turns a cardinal into a decimal.
+Wfst decimal_tail() {
+    return concat_of({rule(".", {"point"}), fractional_digits()});
+}
+
+// The two ways a decimal below one loses its leading zero. Neither is
+// canonical; their relative cost is what decides which written form ITN
+// restores — "0.5" rather than ".5".
+std::vector<Wfst> elided_zero_branches() {
+    return {
+        concat_of({chars_in("0", kUnspokenLeadingZeroPenalty), decimal_tail()}),
+        reweight(decimal_tail(), kUnwrittenLeadingZeroPenalty),
+    };
+}
+
+Wfst build_decimal_core() {
+    std::vector<Wfst> branches{concat_of({cardinal_core_fst(), decimal_tail()})};
+    for (Wfst& elided : elided_zero_branches()) branches.push_back(elided);
+    return connect(union_of(branches));
+}
+
+// As above, but the point is optional, so a bare cardinal is accepted too and
+// the cardinal machine appears once rather than in both halves of a union.
+Wfst build_number_or_decimal() {
+    std::vector<Wfst> branches{concat_of(
+        {cardinal_core_fst(), union_of({empty_string_fst(), decimal_tail()})})};
+    for (Wfst& elided : elided_zero_branches()) branches.push_back(elided);
+    return connect(union_of(branches));
+}
+
+// An optional leading sign, concatenated once rather than once per branch:
+// A·B ∪ A·C is A·(B ∪ C), and the machine on the right of that is three times
+// smaller when B and C both contain the whole decimal grammar.
+Wfst optional_sign() {
+    return union_of({
+        empty_string_fst(),
+        rule("-", {"minus"}),
+        rule("-", {"negative"}, kAltSignPenalty),
+    });
+}
+
+}  // namespace
+
+const Wfst& decimal_core_fst() {
+    static const Wfst f = build_decimal_core();
+    return f;
+}
+
+const Wfst& number_or_decimal_fst() {
+    static const Wfst f = build_number_or_decimal();
+    return f;
+}
+
+const Cascade& decimal_grammar() {
+    static const Wfst signed_decimal =
+        concat_of({optional_sign(), decimal_core_fst()});
+    static const Wfst joined = hyphenated(signed_decimal);
+    static const Cascade grammar = Cascade().then(joined);
+    return grammar;
+}
+
+}  // namespace sayso

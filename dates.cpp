@@ -83,26 +83,11 @@ Wfst day_field() {
 
 // Speech pairs a year's digits — "nineteen ninety-nine", "nineteen hundred",
 // "nineteen oh five" — except in the 2000s, where the cardinal reading wins.
-// Both readings are in the machine; the weights choose.
-Wfst year_field() {
-    const NumberParts& p = number_parts();
-    std::vector<Wfst> years;
-    for (int century = 10; century <= 99; ++century) {
-        Wfst lead = rule(two_digits(century), cardinal_words(century));
-        // 2000 and 2005 are "two thousand" and "two thousand five", not
-        // "twenty hundred" and "twenty oh five"; every other century pairs.
-        float paired_cost = century == 20 ? kTwoThousandsPenalty : 0.0f;
-        Wfst tail = union_of({
-            rule("00", {"hundred"}, paired_cost),
-            reweight(concat_of({rule("0", {"oh"}), p.unit_nz}), paired_cost),
-            p.two_digit_nz,
-        });
-        years.push_back(concat_of({lead, tail}));
-    }
-    years.push_back(reweight(concat_of({p.unit_nz, words_out({"thousand"}), p.padded3}),
-                             kCardinalYearPenalty));
-    return hyphenated(union_of(years));
-}
+// The machine itself lives in numbers.cpp, because the cardinal grammar offers
+// the same reading for a bare four-digit span and a second copy would drift.
+// A date's year field takes the whole range and keeps the cardinal fallback,
+// so "two thousand five" is readable here.
+Wfst year_field() { return hyphenated(year_reading(10, 99, true)); }
 
 // M/D/YYYY -> "march fourteenth twenty fifteen". Every other written format
 // reaches speech through this one machine.

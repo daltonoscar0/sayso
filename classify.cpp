@@ -4,9 +4,13 @@
 
 #include "../Scalpel/utf8.h"
 #include "dates.h"
+#include "decimals.h"
+#include "fractions.h"
+#include "measures.h"
 #include "money.h"
 #include "numbers.h"
 #include "text.h"
+#include "times.h"
 #include "weights.h"
 
 namespace sayso {
@@ -15,8 +19,12 @@ const char* class_name(SemioticClass c) {
     switch (c) {
         case SemioticClass::CARDINAL: return "CARDINAL";
         case SemioticClass::ORDINAL:  return "ORDINAL";
+        case SemioticClass::DECIMAL:  return "DECIMAL";
+        case SemioticClass::FRACTION: return "FRACTION";
         case SemioticClass::MONEY:    return "MONEY";
+        case SemioticClass::MEASURE:  return "MEASURE";
         case SemioticClass::DATE:     return "DATE";
+        case SemioticClass::TIME:     return "TIME";
         case SemioticClass::PLAIN:    break;
     }
     return "PLAIN";
@@ -28,6 +36,10 @@ const std::vector<Grammar>& grammars() {
     static const std::vector<Grammar> registry = {
         {SemioticClass::MONEY,    &money_grammar(),    kMoneyEntry},
         {SemioticClass::DATE,     &date_grammar(),     kDateEntry},
+        {SemioticClass::TIME,     &time_grammar(),     kTimeEntry},
+        {SemioticClass::MEASURE,  &measure_grammar(),  kMeasureEntry},
+        {SemioticClass::DECIMAL,  &decimal_grammar(),  kDecimalEntry},
+        {SemioticClass::FRACTION, &fraction_grammar(), kFractionEntry},
         {SemioticClass::ORDINAL,  &ordinal_grammar(),  kOrdinalEntry},
         {SemioticClass::CARDINAL, &cardinal_grammar(), kCardinalEntry},
     };
@@ -105,8 +117,14 @@ std::vector<Segment> classify(const std::string& input,
     // A grammar's readings of every prefix of a span depend only on its
     // class, that span's text and the direction, so they are worth
     // remembering across a document.
+    //
+    // One entry holds every class's answers rather than one entry per class:
+    // the span text is the expensive part of the key, and building it once per
+    // span start instead of once per (span start, class) is most of what the
+    // warm path costs once the grammars themselves are all cache hits.
     using Readings = std::vector<std::pair<float, std::string>>;
-    static std::unordered_map<std::string, Readings> cache;
+    using SpanReadings = std::vector<Readings>;  // indexed as grammars()
+    static std::unordered_map<std::string, SpanReadings> cache;
 
     std::vector<Candidate> candidates;
     Wfst lattice;
@@ -132,11 +150,12 @@ std::vector<Segment> classify(const std::string& input,
         std::string longest = input.substr(
             from, static_cast<size_t>(tokens[last - 1].end_index) - from);
 
-        for (const Grammar& grammar : grammars()) {
-            std::string key = std::string(1, dir == Direction::TTS ? 't' : 'i') +
-                              class_name(grammar.type) + "\t" + longest;
-            auto hit = cache.find(key);
-            if (hit == cache.end()) {
+        std::string key = std::string(1, dir == Direction::TTS ? 't' : 'i') + "\t" + longest;
+        auto hit = cache.find(key);
+        if (hit == cache.end()) {
+            SpanReadings entry;
+            entry.reserve(grammars().size());
+            for (const Grammar& grammar : grammars()) {
                 std::vector<Path> paths =
                     dir == Direction::TTS ? grammar.grammar->apply_prefixes(span.labels)
                                           : grammar.grammar->apply_prefixes_inverse(span.labels);
@@ -145,9 +164,14 @@ std::vector<Segment> classify(const std::string& input,
                 for (const Path& p : paths)
                     readings.emplace_back(p.found ? p.weight : kInfinity,
                                           p.found ? render(p.olabels) : std::string());
-                hit = cache.emplace(std::move(key), std::move(readings)).first;
+                entry.push_back(std::move(readings));
             }
-            const Readings& readings = hit->second;
+            hit = cache.emplace(std::move(key), std::move(entry)).first;
+        }
+
+        for (size_t g = 0; g < grammars().size(); ++g) {
+            const Grammar& grammar = grammars()[g];
+            const Readings& readings = hit->second[g];
 
             for (size_t k = 1; k + i <= last; ++k) {
                 size_t at = span.boundary[k];

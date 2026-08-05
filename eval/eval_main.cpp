@@ -10,8 +10,10 @@
 //
 // Relaxed (--relaxed) additionally folds away the conventions that two
 // correct normalisers may simply disagree about: hyphens inside compounds
-// ("thirty-fourth" vs "thirty fourth") and the British "and" in
-// "nine hundred and forty two". It also strips hyphens from the ITN *input*,
+// ("thirty-fourth" vs "thirty fourth"), the British "and" in "nine hundred and
+// forty two", "o" for "oh" in "eleven o two", and letter case in "degrees
+// Celsius" — none of which is a distinction speech makes. It also strips
+// hyphens from the ITN *input*,
 // because inverse normalisers are built for ASR output, which has none.
 // Relaxed is the only mode in which a cross-system number means anything;
 // strict measures conformance to this slice's conventions, which are Sayso's.
@@ -77,9 +79,16 @@ std::string fold_style(const std::string& s) {
         size_t j = spaced.find(' ', i);
         if (j == std::string::npos) j = spaced.size();
         std::string token = spaced.substr(i, j - i);
+        // Case is not a spoken distinction, so "degrees Celsius" and "degrees
+        // celsius" are the same reading. ASCII only, which is safe byte at a
+        // time: every byte of a multi-byte UTF-8 sequence has its high bit set.
+        for (char& c : token)
+            if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
         if (token != "and") {
             if (!out.empty()) out += ' ';
-            out += token;
+            // "eleven o two" and "eleven oh two" are two spellings of one
+            // spoken word, not two readings of the time.
+            out += (token == "o" ? "oh" : token);
         }
         i = j + 1;
     }
@@ -89,6 +98,35 @@ std::string fold_style(const std::string& s) {
 std::string dehyphenate(const std::string& s) {
     std::string out;
     for (char c : s) out += (c == '-' ? ' ' : c);
+    return out;
+}
+
+// Drop whole tokens that are nothing but punctuation.
+//
+// The Google TN reference marks punctuation "sil" — written but not spoken —
+// so its spoken column has none at all, while Sayso copies punctuation through
+// verbatim, which is what a TTS front end must do. Comparing the two without
+// this makes almost every sentence a mismatch on a comma, and measures a
+// difference of format rather than of normalisation. The written column keeps
+// its punctuation, so the ITN direction needs the same treatment for the
+// opposite reason: nothing in the spoken input says where the commas were.
+std::string drop_punctuation(const std::string& s) {
+    static const std::string marks = ".,;:!?()[]{}\"'`-—–…";
+    std::string out;
+    size_t i = 0;
+    while (i < s.size()) {
+        size_t j = s.find(' ', i);
+        if (j == std::string::npos) j = s.size();
+        std::string token = s.substr(i, j - i);
+        bool all_marks = !token.empty();
+        for (char c : token)
+            if (marks.find(c) == std::string::npos) all_marks = false;
+        if (!all_marks) {
+            if (!out.empty()) out += ' ';
+            out += token;
+        }
+        i = j + 1;
+    }
     return out;
 }
 
@@ -143,9 +181,13 @@ void show_errors(const std::vector<std::string>& errors, size_t limit) {
 int main(int argc, char** argv) {
     std::string path = "data/google_tn_slice.tsv";
     bool relaxed = false;
+    size_t error_limit = 10;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--relaxed") relaxed = true;
+        // How many mismatches to print. Ten is enough to notice a pattern;
+        // categorising one takes all of them.
+        else if (arg.rfind("--errors=", 0) == 0) error_limit = std::stoul(arg.substr(9));
         else path = arg;
     }
     std::vector<Example> examples = load(path);
@@ -159,8 +201,9 @@ int main(int argc, char** argv) {
     for (const Example& e : examples)
         if (e.canonical != e.written) has_canonical = true;
     std::cout << "slice: " << path << "  (" << examples.size() << " examples)\n"
-              << "scoring: " << (relaxed ? "relaxed (hyphens and \"and\" folded away)"
-                                         : "strict (exact match)")
+              << "scoring: "
+              << (relaxed ? "relaxed (hyphens, \"and\", \"o\"/\"oh\" and case folded away)"
+                          : "strict (exact match)")
               << "\n"
               << "ITN scored against: "
               << (has_canonical ? "the canonical written column"
@@ -173,7 +216,12 @@ int main(int argc, char** argv) {
 
     auto scoring_started = std::chrono::steady_clock::now();
     auto compare = [&](const std::string& a) {
-        return relaxed ? fold_style(squeeze(a)) : squeeze(a);
+        return relaxed ? drop_punctuation(fold_style(squeeze(a))) : squeeze(a);
+    };
+    // The written side keeps its case and hyphens — those are real distinctions
+    // there — but loses standalone punctuation for the reason above.
+    auto compare_written = [&](const std::string& a) {
+        return relaxed ? drop_punctuation(squeeze(a)) : squeeze(a);
     };
     for (const Example& e : examples) {
         std::string got = compare(normalize(e.written, Direction::TTS));
@@ -189,8 +237,8 @@ int main(int argc, char** argv) {
         }
 
         std::string spoken_in = relaxed ? dehyphenate(e.spoken) : e.spoken;
-        got = squeeze(normalize(spoken_in, Direction::ITN));
-        want = squeeze(e.canonical);
+        got = compare_written(normalize(spoken_in, Direction::ITN));
+        want = compare_written(e.canonical);
         ++itn_all.total;
         ++itn_class[e.semiotic_class].total;
         if (got == want) {
@@ -207,9 +255,9 @@ int main(int argc, char** argv) {
                               .count();
 
     report("TTS verbalisation (written -> spoken)", tts_all, tts_class);
-    show_errors(tts_errors, 10);
+    show_errors(tts_errors, error_limit);
     report("ITN (spoken -> written)", itn_all, itn_class);
-    show_errors(itn_errors, 10);
+    show_errors(itn_errors, error_limit);
 
     // Two throughput numbers, because they differ by an order of magnitude and
     // quoting only one would be misleading.

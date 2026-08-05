@@ -9,7 +9,8 @@ are allowed to exist.
     python nemo_compare.py [data/google_tn_slice.tsv] [--relaxed]
 
 --relaxed folds away conventions two correct normalisers may simply disagree
-about — hyphens inside compounds, the British "and" — and strips hyphens from
+about — hyphens inside compounds, the British "and", "o" for "oh", letter case — and
+strips hyphens from
 the ITN input, which inverse normalisers do not expect because ASR output has
 none. It is the only mode in which a cross-system number means anything.
 
@@ -25,7 +26,11 @@ def squeeze(s):
 
 
 def fold_style(s):
-    return " ".join(t for t in s.replace("-", " ").split() if t != "and")
+    # "eleven o two" and "eleven oh two" are two spellings of one spoken word.
+    # Case is not a spoken distinction: "degrees Celsius" and "degrees
+    # celsius" are the same reading.
+    return " ".join("oh" if t == "o" else t
+                    for t in s.lower().replace("-", " ").split() if t != "and")
 
 
 def dehyphenate(s):
@@ -107,7 +112,7 @@ def main():
             out.write(f"{semiotic}\titn\t{spoken_in}\t{got}\t{canonical}\n")
 
     print(f"slice: {path}  ({len(rows)} examples)")
-    mode = "relaxed (hyphens and 'and' folded away)" if relaxed else "strict (exact match)"
+    mode = "relaxed (hyphens, 'and', 'o'/'oh' and case folded away)" if relaxed else "strict (exact match)"
     print("scoring: " + mode)
     report("NeMo TTS verbalisation (written -> spoken)", tts)
     report("NeMo ITN (spoken -> written)", itn)

@@ -17,7 +17,17 @@ and two throughput numbers.
 
 ## The slice
 
-`sayso_eval` reads `data/google_tn_slice.tsv`, one example per line, `#` for comments:
+`sayso_eval` reads `data/google_tn_slice.tsv` by default, or any path given as an argument, so
+the real and synthetic slices can sit side by side:
+
+```bash
+./sayso_eval                              # whatever is at the default path
+./generate_slice data/synthetic_slice.tsv # write a synthetic one somewhere else
+./sayso_eval data/synthetic_slice.tsv --relaxed
+./sayso_eval --relaxed --errors=1000      # every mismatch, for categorising
+```
+
+One example per line, `#` for comments:
 
 ```
 semiotic class <TAB> written <TAB> spoken [<TAB> canonical written]
@@ -51,9 +61,13 @@ To use it:
    `<eos>` marking sentence ends, `<self>` meaning "unchanged" and `sil` meaning "not spoken"
    (which is what punctuation is). The script reassembles sentences and keeps only those whose
    semiotic content Sayso implements, reporting on stderr how many it dropped and why. Scoring
-   a four-class normaliser on sentences containing TIME or MEASURE would measure the absence of
-   those classes rather than the quality of the four that exist; pass `--keep-all` if that is
-   what you want to see.
+   an eight-class normaliser on sentences containing ELECTRONIC or TELEPHONE would measure the
+   absence of those classes rather than the quality of the eight that exist; pass `--keep-all`
+   if that is what you want to see.
+
+   `convert_google_tn.py` decides what to keep from a list of implemented classes, so it needs
+   updating whenever a class is added — `DECIMAL`, `FRACTION`, `MEASURE` and `TIME` are in that
+   list now, and sentences containing them are no longer dropped.
 
 That is all — `sayso_eval` reads `data/google_tn_slice.tsv` with no further arguments. The
 dataset has no canonical-written column, so the report will say ITN is scored against the
@@ -122,8 +136,9 @@ is no conda on this machine.
 ### Reading the results
 
 Run both modes. `--relaxed` is the only one in which a cross-system number means anything:
-strict scoring penalises NeMo for hyphenation and for the British "and", and feeds its inverse
-normaliser hyphenated text that no speech recogniser produces. Even relaxed, several remaining
+strict scoring penalises NeMo for hyphenation, for the British "and", for spelling "oh" as "o"
+and for capitalising "Celsius" — none of which is a distinction speech makes — and feeds its
+inverse normaliser hyphenated text that no speech recogniser produces. Even relaxed, several remaining
 gaps are differences of target rather than errors — the top-level README enumerates them
 against `nemo_results.tsv`.
 

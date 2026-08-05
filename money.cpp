@@ -74,22 +74,31 @@ Wfst build_money() {
             concat_of({cents, words_out({c.minor_plural}, kPluralPreferenceMargin)}),
         });
 
-        // $25 and $25.00
-        branches.push_back(concat_of({symbol, major}));
-        branches.push_back(
-            concat_of({symbol, major, chars_in(".00", kExplicitZeroCentsPenalty)}));
-
-        // $25.10
-        branches.push_back(concat_of({symbol, major, chars_in("."), optional_and(), minor}));
-
         // $2.5 -> two dollars and fifty cents, written back as $2.50
         std::vector<Wfst> short_cents;
         for (int d = 1; d <= 9; ++d)
             short_cents.push_back(rule(digit(d), {kTensWords[d]}));
-        branches.push_back(reweight(
-            concat_of({symbol, major, chars_in("."), optional_and(),
-                       union_of(short_cents), words_out({c.minor_plural})}),
-            kShortCentsPenalty));
+
+        // Everything that may follow a major amount, unioned *before* the
+        // amount is concatenated onto it. Written the other way round — one
+        // branch per tail, each beginning with the amount — every currency
+        // carries four copies of the cardinal machine instead of one, and
+        // composing this grammar against a span is the single largest cost in
+        // the classifier. Path weights are unchanged: the tropical semiring
+        // sums along a path, so a reweight() moved inside a concatenation
+        // lands on the same total.
+        branches.push_back(concat_of({
+            symbol, major,
+            union_of({
+                empty_string_fst(),                            // $25
+                chars_in(".00", kExplicitZeroCentsPenalty),    // $25.00
+                concat_of({chars_in("."), optional_and(), minor}),  // $25.10
+                reweight(concat_of({chars_in("."), optional_and(),
+                                    union_of(short_cents),
+                                    words_out({c.minor_plural})}),
+                         kShortCentsPenalty),                  // $2.5
+            }),
+        }));
 
         // $0.99 -> ninety-nine cents, with the spelled-out zero accepted too
         branches.push_back(concat_of({symbol, chars_in("0."), minor}));
@@ -98,12 +107,12 @@ Wfst build_money() {
                        chars_in("."), optional_and(), minor}),
             kZeroDollarsPenalty));
 
-        // $2.5 million
-        Wfst decimal = union_of({
+        // $2.5 million, with the fractional tail factored out the same way
+        Wfst decimal = concat_of({
             amount,
-            concat_of({amount, rule(".", {"point"}),
-                       concat_of({union_of(fraction_digits),
-                                  closure(union_of(fraction_digits))})}),
+            union_of({empty_string_fst(),
+                      concat_of({rule(".", {"point"}), union_of(fraction_digits),
+                                 closure(union_of(fraction_digits))})}),
         });
         std::vector<Wfst> magnitudes;
         for (const char* m : kMagnitudes)

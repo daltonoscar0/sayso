@@ -163,10 +163,34 @@ static void ambiguity_tests() {
     check(tagging("$25", Direction::TTS) == "MONEY($25)",
           "MONEY claims the symbol rather than leaving it to PLAIN");
 
-    // A four-digit number is a year inside a date and a cardinal outside one.
-    check(normalize("1905", Direction::TTS) == "one thousand nine hundred five" &&
-              normalize("1/1/1905", Direction::TTS) == "january first nineteen oh five",
-          "year readings are licensed by the date grammar, not by the digits");
+    // A bare four-digit number in 1100-2099 is read as a year, in or out of a
+    // date. The Google TN corpus is emphatic about this: when the reading was
+    // licensed only inside the date grammar, it was the single largest source
+    // of disagreement, and "in 1987" came out as "in one thousand nine hundred
+    // eighty seven".
+    check(normalize("1905", Direction::TTS) == "nineteen oh five" &&
+              normalize("1/1/1905", Direction::TTS) == "january first nineteen oh five" &&
+              normalize("Since 1987 the island", Direction::TTS) ==
+                  "Since nineteen eighty-seven the island",
+          "a bare four-digit number is read as a year");
+
+    // But only a bare one. A number inside a larger semiotic object is a
+    // quantity, and those classes embed the cardinal machine directly, so the
+    // year branch is not reachable from them.
+    check(normalize("$1984", Direction::TTS) ==
+              "one thousand nine hundred eighty-four dollars" &&
+              normalize("1984 m", Direction::TTS) ==
+                  "one thousand nine hundred eighty-four meters" &&
+              normalize("1984.5", Direction::TTS) ==
+                  "one thousand nine hundred eighty-four point five",
+          "a number inside money, a measure or a decimal is never a year");
+
+    // The cost of the above, pinned like the other homographs: a four-digit
+    // quantity standing alone is read as a year, because nothing in the span
+    // says otherwise.
+    check(normalize("1984 people attended", Direction::TTS) ==
+              "nineteen eighty-four people attended",
+          "known limitation: a bare four-digit quantity is read as a year");
 
     // Speech recognisers do not hyphenate, so ITN has to hold a whole
     // unhyphenated numeral in one span. This is what the spoken span cap is
@@ -186,12 +210,75 @@ static void ambiguity_tests() {
           "known limitation: homographs like 'second' always convert");
 }
 
+// ---- the eight classes against each other -----------------------------------
+//
+// Every class added after the first four overlaps something already there.
+// These are the overlaps, and which way each was made to fall.
+
+static void class_competition_tests() {
+    // A slash between two numbers is a fraction; three fields make it a date.
+    // DATE is cheaper than FRACTION plus the leftovers, so the longer span
+    // wins without a rule saying dates come first.
+    check(tagging("3/4", Direction::TTS) == "FRACTION(3/4)" &&
+              tagging("3/4/2015", Direction::TTS) == "DATE(3/4/2015)",
+          "a two-field slash is a fraction, a three-field one is a date");
+
+    // A point between digits is a decimal; a currency symbol in front of it
+    // makes the whole thing money, symbol included.
+    check(tagging("25.10", Direction::TTS) == "DECIMAL(25.10)" &&
+              tagging("$25.10", Direction::TTS) == "MONEY($25.10)",
+          "MONEY claims a decimal amount rather than leaving it to DECIMAL");
+
+    // MEASURE has to beat CARDINAL plus a PLAIN unit, which is what its entry
+    // cost being below kPlainPerChar buys.
+    check(tagging("5 km", Direction::TTS) == "MEASURE(5 km)" &&
+              tagging("3.5 kg", Direction::TTS) == "MEASURE(3.5 kg)",
+          "MEASURE claims its unit rather than leaving it to PLAIN");
+
+    // "three pounds" is sterling as often as it is weight and the classifier
+    // has no context to tell them apart, so the measure reading is priced to
+    // lose the tie — while "5 lb", which no currency writes, still wins it.
+    check(tagging("three pounds", Direction::ITN) == "MONEY(three pounds)" &&
+              tagging("5 lb", Direction::TTS) == "MEASURE(5 lb)",
+          "a spoken 'pounds' is money, a written 'lb' is weight");
+
+    // A colon between an hour and a two-digit minute is a time; the minute
+    // field is what stops "2:1" from being one.
+    check(tagging("3:30", Direction::TTS) == "TIME(3:30)" &&
+              tagging("3:30 pm", Direction::TTS) == "TIME(3:30 pm)" &&
+              tagging("2:1", Direction::TTS) ==
+                  "CARDINAL(2) PLAIN(:) CARDINAL(1)",
+          "TIME needs a two-digit minute, so a ratio is not one");
+
+    check(normalize("The 2.5 km run starts at 6:45 am on 3/14/2015.",
+                    Direction::TTS) ==
+              "The two point five kilometers run starts at six forty-five a m on "
+              "march fourteenth twenty fifteen.",
+          "four of the new classes in one sentence");
+
+    check(normalize("we used 2 1/2 cups and 0.5 L at 3:05 pm", Direction::TTS) ==
+              "we used two and a half cups and zero point five liters at three oh "
+              "five p m",
+          "fractions, decimals and times share a sentence");
+
+    check(normalize("we used two and a half cups and zero point five liters at "
+                    "three oh five p m",
+                    Direction::ITN) == "we used 2 1/2 cups and 0.5 L at 3:05 pm",
+          "and those three back again, in canonical written form");
+
+    // The counterpart of "I second the motion": a bare "3:16" has no context
+    // to say it is a verse rather than a time. Pinned as a decision.
+    check(normalize("John 3:16", Direction::TTS) == "John three sixteen",
+          "known limitation: a colon between numbers is always a time");
+}
+
 int main() {
     tokenizer_tests();
     classify_tests();
     serialisation_tests();
     normalisation_tests();
     ambiguity_tests();
+    class_competition_tests();
     std::cout << "\nTests run:" << run << "\nTests failed: " << failed << "\n";
     return failed == 0 ? 0 : 1;
 }

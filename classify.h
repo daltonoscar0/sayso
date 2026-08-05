@@ -21,7 +21,9 @@
 
 namespace sayso {
 
-enum class SemioticClass { PLAIN, CARDINAL, ORDINAL, MONEY, DATE };
+enum class SemioticClass {
+    PLAIN, CARDINAL, ORDINAL, DECIMAL, FRACTION, MONEY, MEASURE, DATE, TIME
+};
 const char* class_name(SemioticClass c);
 
 enum class Direction { TTS, ITN };

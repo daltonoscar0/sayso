@@ -90,12 +90,86 @@ constexpr float kTwoThousandsPenalty = 1.2f;
 // which is what makes 2015 "twenty fifteen" but 2005 "two thousand five".
 constexpr float kCardinalYearPenalty = 0.6f;
 
+// A *bare* four-digit number read as a cardinal ("one thousand nine hundred
+// eighty-four") where the year reading ("nineteen eighty-four") also fits.
+//
+// Priority union by margin, once more: the year branch accepts only four
+// digits inside the year range, so a hair on the general cardinal branch is
+// enough to make the specific one win wherever both apply. A hair rather than
+// a real penalty for two reasons — it is paid by every cardinal Sayso reads,
+// and ITN must still read the cardinal wording straight back to the same
+// digits.
+//
+// It applies to a bare span only. A number inside a larger semiotic object is
+// a quantity, not a year, so MONEY, MEASURE, DECIMAL and FRACTION embed
+// cardinal_core_fst() and never see this branch: "$1984" and "1984 m" stay
+// "one thousand nine hundred eighty-four".
+constexpr float kBareYearMargin = 0.01f;
+
 // A comma before the year in "March 14, 2015" is expected; leaving it out is
 // accepted at a small cost.
 constexpr float kMissingDateCommaPenalty = 0.3f;
 
 // A day spoken as a cardinal ("march fourteen") rather than an ordinal.
 constexpr float kCardinalDayPenalty = 0.8f;
+
+// ---- inside the decimal grammar ---------------------------------------------
+//
+// A decimal's leading zero can go missing on either tape, and the two losses
+// need different costs so that ITN has something to prefer. Speaking "0.5" as
+// "point five" is the commoner elision, so it is the cheaper one; that makes
+// "point five" write back as "0.5" rather than ".5", while ".5" is still read.
+constexpr float kUnspokenLeadingZeroPenalty = 0.4f;
+constexpr float kUnwrittenLeadingZeroPenalty = 0.5f;
+
+// ---- inside the fraction grammar --------------------------------------------
+
+// "a half" where "one half" is canonical, and the other way round inside a
+// mixed number: "two and a half" is what English says, "two and one half" is
+// merely accepted. One weight, applied in whichever direction the branch needs.
+constexpr float kArticleNumeratorPenalty = 0.25f;
+
+// A denominator word Sayso reads but will not write: "fourths" for "quarters",
+// and the spaced "thirty seconds" for "thirty-seconds".
+constexpr float kAltDenominatorPenalty = 0.3f;
+
+// ---- inside the time grammar ------------------------------------------------
+
+// A round hour left unsaid. Which way this leans depends on the meridiem:
+// "3:00" is "three o'clock", but "3:00 pm" is "three p m", so the cost sits on
+// the other branch in each case and one number expresses both preferences.
+constexpr float kBareHourPenalty = 0.35f;
+
+// "p.m." where "pm" is canonical, and "3:30pm" where "3:30 pm" is.
+constexpr float kDottedMeridiemPenalty = 0.4f;
+constexpr float kMeridiemSpacingPenalty = 0.3f;
+
+// ---- inside the measure grammar ---------------------------------------------
+
+// A unit spaced the way its neighbours are not: "5km" for "5 km", "50 %" for
+// "50%". Each unit declares which side of this it sits on.
+constexpr float kMeasureSpacingPenalty = 0.3f;
+
+// A unit spelling Sayso reads but will not write, so that ITN settles on one
+// of them: "lbs" where "lb" is canonical. Without it the two tie and which one
+// comes out changes between builds.
+constexpr float kAltUnitSpellingPenalty = 0.3f;
+
+// A unit whose *spoken* form belongs to another class as well. "three pounds"
+// is sterling far more often than it is weight, and CLASSIFY has no context to
+// tell them apart, so the measure reading pays enough to lose that tie. It is
+// not enough to lose to PLAIN, so "5 lb" is still weight — nothing writes
+// sterling that way.
+constexpr float kCurrencyHomographPenalty = 0.25f;
+
+// A unit written in folded case ("°c", "mhz") rather than the case it is
+// conventionally spelled with ("°C", "MHz"). CLASSIFY folds a span's case
+// before any grammar sees it, so the folded spelling is the only one TTS can
+// ever match and the canonical one is the only one ITN will ever write; the
+// weight is what makes the second of those true. Small, because it is paid on
+// every reading of the units that have a capital in them and means nothing
+// beyond breaking that tie.
+constexpr float kFoldedCasePenalty = 0.1f;
 
 // ---- the classifier ---------------------------------------------------------
 //
@@ -109,11 +183,21 @@ constexpr float kCardinalDayPenalty = 0.8f;
 // longest-match rule.
 constexpr float kPlainPerChar = 1.0f;
 
-// Entry cost per class. MONEY and DATE are cheaper than their parts so that
-// "$25" beats PLAIN "$" plus CARDINAL "25", and "3/14/2015" beats three
-// separate cardinals.
+// Entry cost per class. The composite classes are cheaper than their parts so
+// that "$25" beats PLAIN "$" plus CARDINAL "25", "3/14/2015" beats three
+// separate cardinals, and "5 km" beats CARDINAL "5" plus PLAIN "km".
+//
+// Only the ordering matters, and only against the alternatives that actually
+// overlap. CARDINAL is dearest because every other numeric class contains a
+// cardinal somewhere, so a class that has read more of the span than CARDINAL
+// could should not have to win on grammar cost alone. FRACTION sits above the
+// rest because its span shape — number, slash, number — is a prefix of a date.
 constexpr float kMoneyEntry = 0.05f;
 constexpr float kDateEntry = 0.05f;
+constexpr float kTimeEntry = 0.05f;
+constexpr float kMeasureEntry = 0.05f;
+constexpr float kDecimalEntry = 0.05f;
+constexpr float kFractionEntry = 0.1f;
 constexpr float kOrdinalEntry = 0.1f;
 constexpr float kCardinalEntry = 0.2f;
 

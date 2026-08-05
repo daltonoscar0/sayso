@@ -16,10 +16,10 @@ Usage:
     python3 convert_google_tn.py output-00000-of-00100 > data/google_tn_slice.tsv
 
 Only sentences whose semiotic content Sayso actually implements are kept, and
-the count of everything dropped is reported on stderr — scoring a four-class
-normaliser on sentences containing TIME or MEASURE would measure the absence
-of those classes, not the quality of the four that exist. Pass --classes to
-change the set, or --keep-all to disable the filter and see what the four
+the count of everything dropped is reported on stderr — scoring an eight-class
+normaliser on sentences containing ELECTRONIC or TELEPHONE would measure the absence
+of those classes, not the quality of the eight that exist. Pass --classes to
+change the set, or --keep-all to disable the filter and see what the eight
 classes score on unrestricted text.
 
 One property of the reconstruction is worth knowing: the dataset stores tokens,
@@ -39,7 +39,8 @@ from collections import Counter
 # a sentence.
 NEUTRAL = {"PLAIN", "PUNCT"}
 
-DEFAULT_CLASSES = ["CARDINAL", "ORDINAL", "MONEY", "DATE"]
+DEFAULT_CLASSES = ["CARDINAL", "ORDINAL", "DECIMAL", "FRACTION",
+                   "MONEY", "MEASURE", "DATE", "TIME"]
 
 
 def sentences(handle):

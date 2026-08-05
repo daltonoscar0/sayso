@@ -6,11 +6,13 @@ SCALPEL_SRC = $(SCALPEL_DIR)/tokenizer.cpp \
               $(SCALPEL_DIR)/char_classes.cpp
 
 ENGINE_SRC  = wfst.cpp symbols.cpp
-GRAMMAR_SRC = numbers.cpp money.cpp dates.cpp
+GRAMMAR_SRC = numbers.cpp money.cpp dates.cpp \
+              decimals.cpp fractions.cpp times.cpp measures.cpp
 LIB_SRC     = $(ENGINE_SRC) $(GRAMMAR_SRC) text.cpp classify.cpp normalizer.cpp
 HDRS        = $(wildcard *.h)
 
-TESTS = wfst_tests number_tests money_date_tests pipeline_tests
+TESTS = wfst_tests number_tests money_date_tests quantity_tests clock_tests \
+        pipeline_tests
 
 .PHONY: all test eval clean
 
@@ -25,11 +27,19 @@ wfst_tests: wfst_tests.cpp $(ENGINE_SRC) $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cpp,$^)
 
 # ── Cardinal and ordinal grammars, with round-trip properties ────────────────
-number_tests: number_tests.cpp numbers.cpp $(ENGINE_SRC) $(HDRS)
+number_tests: number_tests.cpp numbers.cpp dates.cpp $(ENGINE_SRC) $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cpp,$^)
 
 # ── Currency and date grammars, with round-trip properties ───────────────────
 money_date_tests: money_date_tests.cpp $(GRAMMAR_SRC) $(ENGINE_SRC) $(HDRS)
+	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cpp,$^)
+
+# ── Decimal, fraction and measure grammars, with round-trip properties ───────
+quantity_tests: quantity_tests.cpp $(GRAMMAR_SRC) $(ENGINE_SRC) $(HDRS)
+	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cpp,$^)
+
+# ── Clock times, with round-trip properties ──────────────────────────────────
+clock_tests: clock_tests.cpp $(GRAMMAR_SRC) $(ENGINE_SRC) $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cpp,$^)
 
 # ── Tokeniser bridge, CLASSIFY and end-to-end normalisation ──────────────────

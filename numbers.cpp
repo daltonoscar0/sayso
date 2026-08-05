@@ -37,6 +37,15 @@ const OrdinalPair kOrdinals[] = {
 };
 
 std::string digit(int d) { return std::string(1, static_cast<char>('0' + d)); }
+std::string two_digits(int n) { return digit(n / 10) + digit(n % 10); }
+
+// Left unhyphenated; the hyphenator stage joins "eighty" to "four".
+std::vector<std::string> cardinal_words(int n) {
+    if (n < 10) return {kUnits[n]};
+    if (n < 20) return {kTeens[n - 10]};
+    if (n % 10 == 0) return {kTens[n / 10]};
+    return {kTens[n / 10], kUnits[n % 10]};
+}
 
 // An optional thousands comma. Reading "1,234" costs a little; writing one
 // costs the same, which is why ITN settles on the unseparated "1234".
@@ -319,6 +328,30 @@ const NumberParts& number_parts() {
     return parts;
 }
 
+Wfst year_reading(int first_century, int last_century, bool with_cardinal_fallback) {
+    const NumberParts& p = number_parts();
+    std::vector<Wfst> years;
+    for (int century = first_century; century <= last_century; ++century) {
+        Wfst lead = rule(two_digits(century), cardinal_words(century));
+        // 2000 and 2005 are "two thousand" and "two thousand five", not
+        // "twenty hundred" and "twenty oh five"; every other century pairs.
+        // The bare two-digit tail is never penalised, which is what leaves
+        // 2015 as "twenty fifteen".
+        float paired_cost = century == 20 ? kTwoThousandsPenalty : 0.0f;
+        Wfst tail = union_of({
+            rule("00", {"hundred"}, paired_cost),
+            reweight(concat_of({rule("0", {"oh"}), p.unit_nz}), paired_cost),
+            p.two_digit_nz,
+        });
+        years.push_back(concat_of({lead, tail}));
+    }
+    if (with_cardinal_fallback)
+        years.push_back(reweight(
+            concat_of({p.unit_nz, words_out({"thousand"}), p.padded3}),
+            kCardinalYearPenalty));
+    return union_of(years);
+}
+
 const Wfst& cardinal_core_fst() {
     static const Wfst f = build_cardinal_core(true);
     return f;
@@ -334,12 +367,23 @@ Wfst hyphenated(const Wfst& f) {
 }
 
 const Cascade& cardinal_grammar() {
-    static const Wfst signed_number = union_of({
-        cardinal_core_fst(),
-        concat_of({rule("-", {"minus"}), cardinal_core_fst()}),
-        concat_of({rule("-", {"negative"}, kAltSignPenalty), cardinal_core_fst()}),
+    // The sign is concatenated onto the number rather than distributed over
+    // three copies of it: A·B ∪ A·C is A·(B ∪ C), and B here is the whole
+    // cardinal machine.
+    static const Wfst sign = union_of({
+        empty_string_fst(),
+        rule("-", {"minus"}),
+        rule("-", {"negative"}, kAltSignPenalty),
     });
-    static const Wfst joined = hyphenated(signed_number);
+    // A bare four-digit number in the year range gets the paired reading, by
+    // the margin on the general branch rather than by excluding anything. A
+    // signed number is never a year, so the year branch stands outside the
+    // sign.
+    static const Wfst body = union_of({
+        reweight(concat_of({sign, cardinal_core_fst()}), kBareYearMargin),
+        year_reading(kBareYearFirstCentury, kBareYearLastCentury, false),
+    });
+    static const Wfst joined = hyphenated(body);
     static const Cascade grammar = Cascade().then(joined);
     return grammar;
 }

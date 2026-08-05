@@ -53,7 +53,9 @@ static void cardinal_tests() {
         {"110", "one hundred ten"},
         {"999", "nine hundred ninety-nine"},
         {"1000", "one thousand"},
-        {"1234", "one thousand two hundred thirty-four"},
+        // 1100-2099 is the year range, where a bare number pairs instead; see
+        // the year test below. 3456 is a four-digit cardinal outside it.
+        {"3456", "three thousand four hundred fifty-six"},
         {"10000", "ten thousand"},
         {"100000", "one hundred thousand"},
         {"1000000", "one million"},
@@ -70,6 +72,34 @@ static void cardinal_tests() {
                       << " (want " << c.spoken << ")\n";
         }
     check(ok, "cardinal verbalisation 0 .. 999,999,999");
+
+    // A bare four-digit number in 1100-2099 is read the way a year is read.
+    // The corpus is emphatic about this — it was the single largest source of
+    // disagreement when the reading was licensed only inside a date — and the
+    // cost is that a four-digit quantity in that range is read as a year too.
+    check(tts(cardinal_grammar(), "1984") == "nineteen eighty-four" &&
+              tts(cardinal_grammar(), "1905") == "nineteen oh five" &&
+              tts(cardinal_grammar(), "1113") == "eleven thirteen" &&
+              tts(cardinal_grammar(), "2015") == "twenty fifteen",
+          "a bare four-digit number in the year range is paired");
+
+    // Not across 2000-2009, where the cardinal reading is the ordinary one,
+    // and not outside the range at either end.
+    check(tts(cardinal_grammar(), "2005") == "two thousand five" &&
+              tts(cardinal_grammar(), "2000") == "two thousand" &&
+              tts(cardinal_grammar(), "1050") == "one thousand fifty" &&
+              tts(cardinal_grammar(), "2100") == "two thousand one hundred",
+          "the 2000s and numbers outside the range stay cardinals");
+
+    // Both wordings are read back to the same digits, which is what keeps the
+    // margin a margin rather than an exclusion.
+    check(itn(cardinal_grammar(), "nineteen eighty-four") == "1984" &&
+              itn(cardinal_grammar(), "one thousand nine hundred eighty-four") == "1984",
+          "either wording of a year is read back to the same digits");
+
+    // A signed number is never a year: the year branch stands outside the sign.
+    check(tts(cardinal_grammar(), "-1984") == "minus one thousand nine hundred eighty-four",
+          "a signed four-digit number is a cardinal, not a year");
 
     ok = true;
     for (const Case& c : cases)
