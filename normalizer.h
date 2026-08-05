@@ -14,10 +14,12 @@
 
 namespace sayso {
 
-std::string normalize(const std::string& input, Direction dir);
+std::string normalize(const std::string& input, Direction dir,
+                      DateSpeech speech = DateSpeech::Canonical);
 
 // Same pipeline, but hands back the tagging as well — used by the CLI's
 // --explain mode and by the evaluation harness's per-class scoring.
-std::vector<Segment> analyse(const std::string& input, Direction dir);
+std::vector<Segment> analyse(const std::string& input, Direction dir,
+                             DateSpeech speech = DateSpeech::Canonical);
 
 }  // namespace sayso

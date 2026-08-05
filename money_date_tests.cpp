@@ -318,10 +318,48 @@ static void property_tests() {
               (witness.empty() ? "" : " [" + witness + "]"));
 }
 
+// ---- the spoken-order option ------------------------------------------------
+
+static void date_order_tests() {
+    // The default is unchanged: every written format reaches one spoken form,
+    // which is what lets ITN canonicalise.
+    const char* forms[] = {"3/14/2015", "2015-03-14", "march 14, 2015", "14 march 2015"};
+    bool one_form = true;
+    for (const char* f : forms)
+        if (tts(date_grammar(), f) != "march fourteenth twenty fifteen") one_form = false;
+    check(one_form, "canonical order: four written formats, one spoken form");
+
+    // Preserving the written order is what the Google TN reference does, and
+    // it is 84% of everything Sayso otherwise disagrees with. A date written
+    // day first is spoken day first — an ISO date included, which is not
+    // obvious until you read the data.
+    const Cascade& preserve = date_grammar(DateSpeech::PreserveWrittenOrder);
+    check(tts(preserve, "14 march 2015") == "the fourteenth of march twenty fifteen" &&
+              tts(preserve, "2015-03-14") == "the fourteenth of march twenty fifteen",
+          "preserved order: a day-first date is spoken day first");
+
+    check(tts(preserve, "3/14/2015") == "march fourteenth twenty fifteen" &&
+              tts(preserve, "march 14, 2015") == "march fourteenth twenty fifteen",
+          "and a month-first one is not");
+
+    // Both spoken forms still read back to a written date. Inside the
+    // day-first family ITN settles on the cheapest member, which is the ISO
+    // form — the same canonicalisation by weight as everywhere else.
+    check(itn(preserve, "the fourteenth of march twenty fifteen") == "2015-03-14" &&
+              itn(preserve, "march fourteenth twenty fifteen") == "3/14/2015",
+          "and each spoken form reads back to a written one");
+
+    // The option is the only difference. The marker it turns on never reaches
+    // either tape.
+    check(tts(preserve, "14 march 2015").find('\x01') == std::string::npos,
+          "the orientation marker stays inside the cascade");
+}
+
 int main() {
     money_tests();
     date_tests();
     ambiguity_tests();
+    date_order_tests();
     property_tests();
     std::cout << "\nTests run:" << run << "\nTests failed: " << failed << "\n";
     return failed == 0 ? 0 : 1;

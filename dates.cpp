@@ -182,22 +182,106 @@ Wfst canonical_format() {
     return closure(union_of(any));
 }
 
+// A one-symbol flag on the intermediate tape, saying "this date was written
+// day first". Only the format stage writes it and only the stage after reads
+// it, so it never reaches either end. Interned whole rather than through
+// chars_of(), which would split it into characters that could occur in text.
+Label order_marker() {
+    static const Label marker = ch("\x01" "day-first");
+    return marker;
+}
+
+Wfst mark_day_first(const Wfst& format) {
+    return concat_of({transducer({}, {order_marker()}), format});
+}
+
+// The two formats that write the day before the month. Kestrel speaks both of
+// them day first — an ISO date included, which is not obvious until you read
+// the data.
 Wfst build_formats() {
     return connect(union_of({
         canonical_format(),
         reweight(month_name_format(), kMonthNameFormatPenalty),
-        reweight(day_first_format(), kDayFirstFormatPenalty),
-        reweight(iso_format(), kIsoFormatPenalty),
+        reweight(mark_day_first(day_first_format()), kDayFirstFormatPenalty),
+        reweight(mark_day_first(iso_format()), kIsoFormatPenalty),
     }));
+}
+
+// ---- orientation ------------------------------------------------------------
+//
+// The stage between format and speech, and the only one the runtime option
+// changes. Under DateSpeech::Canonical it drops the marker, so every written
+// format reaches the one spoken form. Under PreserveWrittenOrder it keeps the
+// marker and swaps the first two fields, so a day-first date stays day first.
+
+Wfst drop_marker() {
+    return concat_of({
+        union_of({empty_string_fst(), transducer({order_marker()}, {})}),
+        canonical_format(),
+    });
+}
+
+// "3/14/2015" -> "14/3/2015", holding the month in the machine's state. Twelve
+// values of a one- or two-character field, which is the cheap side of the
+// reordering — the same reasoning that put the day in day_first_format().
+Wfst swap_month_and_day() {
+    std::vector<Wfst> months;
+    for (int m = 1; m <= 12; ++m) {
+        std::string number = std::to_string(m);
+        for (const std::string& written : {number, two_digits(m)}) {
+            months.push_back(concat_of({
+                chars_in(written), chars_in("/"),
+                copy_digit(), optional_of(copy_digit()),
+                chars_out("/" + number + "/"),
+                chars_in("/"),
+                copy_digit(), copy_digit(), copy_digit(), copy_digit(),
+            }));
+            if (m >= 10) break;  // no zero-padded form to add
+        }
+    }
+    return union_of(months);
+}
+
+Wfst reorient() {
+    return connect(union_of({
+        canonical_format(),
+        concat_of({transducer({order_marker()}, {order_marker()}),
+                   swap_month_and_day()}),
+    }));
+}
+
+// ---- the day-first spoken form ----------------------------------------------
+
+// "the fourteenth of march twenty fifteen", read off "14/3/2015" behind the
+// marker. One copy each of the day, month and year fields, because the swap
+// already happened upstream.
+Wfst day_first_spoken() {
+    return concat_of({
+        transducer({order_marker()}, {}),
+        words_out({"the"}), day_field(), words_out({"of"}),
+        chars_in("/"), month_field(),
+        chars_in("/"), year_field(),
+    });
 }
 
 }  // namespace
 
-const Cascade& date_grammar() {
+const Cascade& date_grammar(DateSpeech speech) {
+    // One format stage and one speaking stage, shared. Only the orientation
+    // between them differs, which is what keeps the option from doubling the
+    // largest grammar in the library.
     static const Wfst formats = build_formats();
-    static const Wfst canonical = connect(canonical_date());
-    static const Cascade grammar = Cascade().then(formats).then(canonical);
-    return grammar;
+    static const Wfst spoken =
+        connect(union_of({canonical_date(), day_first_spoken()}));
+    static const Wfst canonical_orientation = connect(drop_marker());
+    static const Wfst preserved_orientation = reorient();
+
+    static const Cascade canonical_grammar =
+        Cascade().then(formats).then(canonical_orientation).then(spoken);
+    static const Cascade preserving_grammar =
+        Cascade().then(formats).then(preserved_orientation).then(spoken);
+
+    return speech == DateSpeech::Canonical ? canonical_grammar : preserving_grammar;
 }
 
 }  // namespace sayso

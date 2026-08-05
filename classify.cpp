@@ -38,12 +38,14 @@ const char* class_name(SemioticClass c) {
     return "PLAIN";
 }
 
-const std::vector<Grammar>& grammars() {
+const std::vector<Grammar>& grammars(DateSpeech speech) {
     // Ordered most specific first; the order is cosmetic, the entry costs do
-    // the deciding.
-    static const std::vector<Grammar> registry = {
+    // the deciding. Two registries, differing only in which date cascade they
+    // point at.
+    auto build = [](DateSpeech order) {
+        return std::vector<Grammar>{
         {SemioticClass::MONEY,    &money_grammar(),    kMoneyEntry},
-        {SemioticClass::DATE,     &date_grammar(),     kDateEntry},
+        {SemioticClass::DATE,     &date_grammar(order), kDateEntry},
         {SemioticClass::TIME,     &time_grammar(),     kTimeEntry},
         {SemioticClass::DECADE,   &decade_grammar(),   kDecadeEntry},
         {SemioticClass::MEASURE,  &measure_grammar(),  kMeasureEntry},
@@ -55,8 +57,12 @@ const std::vector<Grammar>& grammars() {
         {SemioticClass::LETTERS,  &letters_grammar(),  kLettersEntry, true},
         {SemioticClass::ABBREV,   &abbreviation_grammar(), kAbbreviationEntry, true},
         {SemioticClass::RANGE,    &range_grammar(),    kRangeEntry, true},
+        };
     };
-    return registry;
+    static const std::vector<Grammar> canonical = build(DateSpeech::Canonical);
+    static const std::vector<Grammar> preserving =
+        build(DateSpeech::PreserveWrittenOrder);
+    return speech == DateSpeech::Canonical ? canonical : preserving;
 }
 
 namespace {
@@ -122,7 +128,8 @@ struct Candidate {
 }  // namespace
 
 std::vector<Segment> classify(const std::string& input,
-                              const std::vector<Token>& tokens, Direction dir) {
+                              const std::vector<Token>& tokens, Direction dir,
+                              DateSpeech speech) {
     std::vector<Segment> result;
     size_t n = tokens.size();
     if (n == 0) return result;
@@ -171,12 +178,13 @@ std::vector<Segment> classify(const std::string& input,
         std::string longest = input.substr(
             from, static_cast<size_t>(tokens[last - 1].end_index) - from);
 
-        std::string key = std::string(1, dir == Direction::TTS ? 't' : 'i') + "\t" + longest;
+        std::string key = std::string(1, dir == Direction::TTS ? 't' : 'i') +
+                          (speech == DateSpeech::Canonical ? 'c' : 'p') + "\t" + longest;
         auto hit = cache.find(key);
         if (hit == cache.end()) {
             SpanReadings entry;
-            entry.reserve(grammars().size());
-            for (const Grammar& grammar : grammars()) {
+            entry.reserve(grammars(speech).size());
+            for (const Grammar& grammar : grammars(speech)) {
                 if (dir == Direction::ITN && grammar.speaking_only) {
                     entry.emplace_back();
                     continue;
@@ -206,8 +214,8 @@ std::vector<Segment> classify(const std::string& input,
             hit = cache.emplace(std::move(key), std::move(entry)).first;
         }
 
-        for (size_t g = 0; g < grammars().size(); ++g) {
-            const Grammar& grammar = grammars()[g];
+        for (size_t g = 0; g < grammars(speech).size(); ++g) {
+            const Grammar& grammar = grammars(speech)[g];
             const Readings& readings = hit->second[g];
 
             for (size_t k = 1; k + i <= last; ++k) {

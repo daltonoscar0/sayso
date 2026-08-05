@@ -182,9 +182,13 @@ int main(int argc, char** argv) {
     std::string path = "data/google_tn_slice.tsv";
     bool relaxed = false;
     size_t error_limit = 10;
+    DateSpeech speech = DateSpeech::Canonical;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--relaxed") relaxed = true;
+        // The order-preserving spoken date, which is what the Google TN
+        // reference does; see DateSpeech in dates.h.
+        else if (arg == "--preserve-date-order") speech = DateSpeech::PreserveWrittenOrder;
         // How many mismatches to print. Ten is enough to notice a pattern;
         // categorising one takes all of them.
         else if (arg.rfind("--errors=", 0) == 0) error_limit = std::stoul(arg.substr(9));
@@ -205,6 +209,10 @@ int main(int argc, char** argv) {
               << (relaxed ? "relaxed (hyphens, \"and\", \"o\"/\"oh\" and case folded away)"
                           : "strict (exact match)")
               << "\n"
+              << "date order: "
+              << (speech == DateSpeech::Canonical ? "canonical (one spoken form)"
+                                                  : "written order preserved")
+              << "\n"
               << "ITN scored against: "
               << (has_canonical ? "the canonical written column"
                                 : "the written column (no canonical column present)")
@@ -224,7 +232,7 @@ int main(int argc, char** argv) {
         return relaxed ? drop_punctuation(squeeze(a)) : squeeze(a);
     };
     for (const Example& e : examples) {
-        std::string got = compare(normalize(e.written, Direction::TTS));
+        std::string got = compare(normalize(e.written, Direction::TTS, speech));
         std::string want = compare(e.spoken);
         ++tts_all.total;
         ++tts_class[e.semiotic_class].total;
@@ -237,7 +245,7 @@ int main(int argc, char** argv) {
         }
 
         std::string spoken_in = relaxed ? dehyphenate(e.spoken) : e.spoken;
-        got = compare_written(normalize(spoken_in, Direction::ITN));
+        got = compare_written(normalize(spoken_in, Direction::ITN, speech));
         want = compare_written(e.canonical);
         ++itn_all.total;
         ++itn_class[e.semiotic_class].total;
@@ -272,7 +280,7 @@ int main(int argc, char** argv) {
     const int kSentences = 10000;
     auto started = std::chrono::steady_clock::now();
     for (int i = 0; i < kSentences; ++i)
-        normalize(examples[i % examples.size()].written, Direction::TTS);
+        normalize(examples[i % examples.size()].written, Direction::TTS, speech);
     double warm_seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
 

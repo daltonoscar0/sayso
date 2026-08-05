@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "../Scalpel/token.h"
+#include "dates.h"
 #include "wfst.h"
 
 namespace sayso {
@@ -58,10 +59,14 @@ struct Grammar {
     float entry_cost;
     bool speaking_only = false;
 };
-const std::vector<Grammar>& grammars();
+// The registry depends on the date option, which selects one of two date
+// cascades. Everything else in it is shared.
+const std::vector<Grammar>& grammars(
+    DateSpeech speech = DateSpeech::Canonical);
 
 std::vector<Segment> classify(const std::string& input,
-                              const std::vector<Token>& tokens, Direction dir);
+                              const std::vector<Token>& tokens, Direction dir,
+                              DateSpeech speech = DateSpeech::Canonical);
 
 // Longest span, in tokens, a class may claim. The two directions differ by a
 // lot. The longest written span is "$1,234,567.89" at eight tokens. The
