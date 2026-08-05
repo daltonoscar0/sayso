@@ -14,14 +14,22 @@ Input   →  "it costs twenty-five dollars and ten cents on march fourteenth twe
 ITN     →  "it costs $25.10 on 3/14/2015."
 ```
 
-Eight semiotic classes: `CARDINAL`, `ORDINAL`, `DECIMAL`, `FRACTION`, `MONEY`, `MEASURE`,
-`DATE`, `TIME`. Everything else passes through byte for byte.
+Twelve semiotic classes: `CARDINAL`, `ORDINAL`, `DECIMAL`, `FRACTION`, `MONEY`, `MEASURE`,
+`DATE`, `TIME`, `DECADE`, `RANGE`, `ABBREV`, `LETTERS`. Everything else passes through byte for
+byte.
 
 ```
 Input   →  "The 2.5 km run starts at 6:45 am; 3/4 of the field paid £12.50."
 TTS     →  "The two point five kilometers run starts at six forty-five a m;
             three quarters of the field paid twelve pounds and fifty pence."
+
+Input   →  "St Paul's, vol 3, pp 1-10, e.g. the 1980s."
+TTS     →  "saint Paul's, volume three, pp one to ten, e g the nineteen eighties."
 ```
+
+Nine of the twelve are bidirectional. Three — `RANGE`, `ABBREV`, `LETTERS` — only speak; see
+[One-directional classes](#one-directional-classes) for why that is a property of those
+classes rather than a hole in the design.
 
 ---
 
@@ -55,12 +63,12 @@ grammar, put the sentence back together.
 │  Each grammar is run once per span *start*, not once per     │
 │  span: every arc leaving state i comes from one composition. │
 └────────────────────┬─────────────────────────────────────────┘
-                     │  spans: one of eight classes, or PLAIN
+                     │  spans: one of twelve classes, or PLAIN
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  per-class grammar — a composition of WFSTs                  │
 │                                                              │
-│    CARDINAL  cardinal ∘ hyphenator                           │
+│    CARDINAL  (cardinal | year | roman) ∘ hyphenator          │
 │    ORDINAL   suffix-stripper ∘ cardinal ∘ (ordinaliser ∘ h.) │
 │    DECIMAL   sign · cardinal · point · digits, hyphenated    │
 │    FRACTION  sign · numerator · denominator-table, hyph.     │
@@ -68,6 +76,10 @@ grammar, put the sentence back together.
 │    MEASURE   (cardinal | decimal) · unit-table, hyphenated   │
 │    DATE      written-format-rewrites ∘ canonical-date        │
 │    TIME      hour · minute · meridiem, hyphenated            │
+│    DECADE    century-pair · pluralised-tens, hyphenated      │
+│    RANGE     number · hyphen→"to" · number, hyphenated       │
+│    ABBREV    a lexical table            ── speaking only     │
+│    LETTERS   (letter ".")+ letter?      ── speaking only     │
 │                                                              │
 │  Small compositions are done once at build time; the large   │
 │  ones are a Cascade, composed against the input instead.     │
@@ -102,6 +114,32 @@ readable. `2015-03-14` is a date and also, if you squint, three numbers and two 
 Every one of those is settled the same way: the tropical semiring makes a path's weight the
 sum of its arcs, and the answer is the cheapest path. Nothing else in the pipeline arbitrates.
 
+### One-directional classes
+
+Nine classes are read in both directions. Three are not, and the reason is worth setting out,
+because it is the one place the "one grammar, read both ways" story needs a footnote.
+
+Expanding `St` to `saint` is normalisation. Contracting every `saint` back to `St` is not. The
+asymmetry is semantic, and no weight can express it here: CLASSIFY prices `PLAIN` per
+character, so a five-letter word costs 1.0 × 5 against a class entry cost of 0.05. A class
+whose written side is drawn from ordinary English can *always* outbid leaving the word alone,
+whichever way it is pointing. Making the penalty large enough to lose in one direction would
+lose it in both.
+
+So the registry carries a flag, and `classify()` skips those grammars when asked for ITN. This
+is not a second grammar and not a weakening of the rule — each machine is still written once
+and still inverted for everything else. It records that a *class* is one-directional.
+
+Only classes with an English written side need it. `RANGE` joins them for a related reason:
+`5-10` spoken as "five to ten" is normalisation, but "five to ten" written as `5-10` changes
+the sentence's syntax rather than its spelling — "increased from five to ten percent" would
+become "increased from 5-10 percent".
+
+Roman numerals are the counter-example that proves the rule. They live *inside* `CARDINAL`
+rather than in a class of their own, and there a weight does suffice: ITN's spoken "two" meets
+`2` at a hair and `II` at a real penalty, so the digits win. A separate `ROMAN` class would
+have had to beat `PLAIN` instead, and could not.
+
 ### Why one grammar rather than two
 
 A hand-written inverse grammar is a second thing to keep in sync, and it will not stay in
@@ -123,7 +161,7 @@ what ITN will accept. Ordinal suffix agreement is the clearest case: the machine
 No external libraries. No build system required, though there is a Makefile.
 
 ```bash
-make          # sayso + all six test binaries
+make          # sayso + all seven test binaries
 make test     # build and run the suite
 ```
 
@@ -181,17 +219,59 @@ Born december twenty-fifth nineteen ninety-nine, she paid three pounds.
 | `FRACTION` | `1/2`, `3/4`, `15/16`, `3/64`, `2 1/2` | `one half`, `three quarters`, `two and a half` |
 | `MONEY` | `$25`, `$25.10`, `$0.99`, `€40`, `£1.50`, `$2.5 million` | `twenty-five dollars and ten cents`, `fifty pence` |
 | `MEASURE` | `5 km`, `3.5 kg`, `100 mph`, `50%`, `25°C`, `500 MB` | `five kilometers`, `fifty percent`, `twenty-five degrees celsius` |
-| `DATE` | `3/14/2015`, `2015-03-14`, `March 14, 2015`, `14 March 2015` | `march fourteenth twenty fifteen` |
-| `TIME` | `3:30`, `03:30`, `3:05`, `3:00`, `3:30 pm`, `3:30 p.m.`, `19:30` | `three thirty`, `three oh five`, `three o'clock`, `three thirty p m` |
+| `DATE` | `3/14/2015`, `2015-03-14`, `March 14, 2015`, `14 March 2015`, `Jun 29, 2011` | `march fourteenth twenty fifteen` |
+| `TIME` | `3:30`, `3:05`, `3:00`, `3:30 pm`, `10.30pm`, `5pm`, `18:00` | `three thirty`, `three oh five`, `three o'clock`, `eighteen hundred` |
+| `DECADE` | `1970s`, `1900s`, `2000s`, `'80s` | `nineteen seventies`, `nineteen hundreds`, `two thousands`, `eighties` |
+| `RANGE` | `1-10`, `5 - 0`, `1729-1811` | `one to ten`, `seventeen twenty-nine to eighteen eleven` |
+| `ABBREV` | `St`, `vol`, `Dr`, `vs`, `Mt`, `Ltd` | `saint`, `volume`, `doctor`, `versus` |
+| `LETTERS` | `U.S.`, `D.C.`, `e.g.` | `u s`, `d c`, `e g` |
 
-Three of these stop short of where a table could have gone on, and each time for the same
-reason — the classifier has no context, so a grammar that reads more also mis-reads more.
-Fraction denominators stop at the ones with single-word ordinals. Times have no seconds
-field, because English has no settled way of saying one for the grammar to canonicalise to.
-And the measure table deliberately omits every unit whose written form is also an ordinary
-English word: `in`, `s`, `h`, `t`, `a`. Without that, `3 in the morning` is three inches.
+Roman numerals live inside `CARDINAL` rather than in a class of their own, because they are a
+written-side spelling of a small integer: `World War II` is `world war two`.
+
+Several of these stop short of where a table could have gone on, and always for the same
+reason — the classifier has no context, so a grammar that reads more also mis-reads more:
+
+- **Fraction denominators** stop at the ones with single-word ordinals.
+- **Times** have no seconds field: English has no settled way of saying one to canonicalise to.
+- **The measure table** omits every unit whose written form is an ordinary English word —
+  `in`, `s`, `h`, `t`, `a`. Without that, `3 in the morning` is three inches.
+- **The abbreviation table** omits every abbreviation commoner as a word. `no` expands to
+  `number` 288 times in the corpus shard and is the word "no" 8,805 times, so it is out; `co`,
+  `min` and `col` go with it.
+- **`LETTERS` reads dotted shapes only.** Spans are case-folded before a grammar sees them, so
+  nothing can tell `PDF` from `pdf`; a bare-letter-run branch would spell out every lower-case
+  word it met. The dots are the only signal that survives folding. `PDF` therefore stays `PDF`,
+  which costs the largest shape in the data and was still the right trade.
+- **Roman numerals are a table, not a parser.** A parser over `M`, `D`, `C`, `L`, `X`, `V`, `I`
+  accepts `MIX`, `DID` and `CIVIC`; single letters are excluded outright, since `I` alone is
+  overwhelmingly the pronoun.
+- **`VERBATIM` was declined entirely.** See [What is deliberately absent](#what-is-deliberately-absent).
 
 ---
+
+## What is deliberately absent
+
+Three things a reasonable person would expect to find here, and the evidence for leaving each
+out. All three counts are from the held-out corpus shard.
+
+**`VERBATIM`.** By token count it looks like the second-largest unimplemented class. It is
+four unrelated transformations wearing one label, and none survived scrutiny. `&` → "and" is
+40% of its mass and, inverted, would rewrite 189,026 ordinary "and" tokens into ampersands —
+and inversion is not optional for a bidirectional grammar. Its Greek-letter table is 91.5% a
+tokeniser artefact: whole Greek *words* shredded into letters and read out one at a time,
+against which a symbol table would have rewritten 593 English words into Greek. What remains
+is a letter-spellout, which belongs to `LETTERS`. Nothing durable was left.
+
+**Bare all-caps acronyms.** `PDF` → "p d f" is the single largest shape in the data. Spans
+reach a grammar case-folded, so no rule here can distinguish `PDF` from `pdf`, and a bare-run
+branch would spell out ordinary lower-case words. The dots are the only signal that survives
+folding, so `LETTERS` reads `U.S.` and leaves `PDF` alone.
+
+**Dialect conversion.** The reference turns `colour` into `color`, `metres` into `meters`,
+`organisation` into `organization` — 12,380 tokens across 540 types. That is not text
+normalisation, and Sayso does not do it. It costs about 1% of the corpus score, and the
+[accuracy section](#on-the-real-google-tn-slice) counts it separately for that reason.
 
 ## The weighting scheme
 
@@ -327,7 +407,7 @@ unexpanded in `797 MB`, and turns `three thousand nine hundred sixty-nine centim
 The fair summary is unchanged from when this comparison covered four classes: Sayso
 canonicalises harder in the ITN direction — numeric dates and times, currency symbols, no
 thousands separators — because that is what its weighting scheme is for, and NeMo covers far
-more of English than eight semiotic classes.
+more of English than twelve semiotic classes.
 
 ### Throughput
 
@@ -338,11 +418,13 @@ them against each other in one sitting or not at all:
 
 | | classes | cold, every sentence novel | warm, span cache populated |
 |---|---:|---:|---:|
-| four-class build (previous revision) | 4 | 257/s | 60,700/s |
-| this build | **8** | **276/s** | **74,100/s** |
+| four-class build | 4 | 257/s | 60,700/s |
+| eight-class build | 8 | 276/s | 74,100/s |
+| this build | **12** | **235/s** | **70,000/s** |
 
-Twice the semiotic classes, and still faster: about 7% on the cold path and 22% on the warm
-one.
+Three times the semiotic classes for 9% off the cold path, and the warm path still 15% faster
+than it was with four. The eight-class row is where the factoring below paid off; the last four
+classes are what it bought.
 
 Two things had already got the classifier most of the way there. **FIRST- and LAST-set
 prefilters** answer most of its questions from the first and last symbol of a span, without
@@ -407,62 +489,67 @@ nothing to take out. It is the obvious place to look next.
 
 ### On the real Google TN slice
 
-Everything above is the synthetic slice. This is 500 sentences of Wikipedia from
+Everything above is the synthetic slice. This is 5,000 sentences of Wikipedia from
 `output-00099-of-00100` — a held-out *test* shard, per the dataset's own split — normalised by
 Google's Kestrel and used as the reference. It is the only number here that measures agreement
 with something other than Sayso's own conventions.
 
-**TTS 62.8%. ITN 17.0%**, relaxed scoring.
+**TTS 68.7%**, relaxed scoring.
 
-| class | n | TTS | ITN |
-|---|---:|---:|---:|
-| CARDINAL | 96 | 71.9% | 45.8% |
-| DATE | 378 | 59.3% | 6.6% |
-| MEASURE | 8 | 87.5% | 62.5% |
-| ORDINAL | 11 | 100.0% | 90.9% |
-| DECIMAL | 4 | 75.0% | 25.0% |
-| MONEY / FRACTION / TIME | 1 each | 0.0% | 0.0% |
-| **all** | **500** | **62.8%** | **17.0%** |
+| class | n | TTS |
+|---|---:|---:|
+| CARDINAL | 930 | 86.6% |
+| DATE | 3,768 | 62.9% |
+| DECIMAL | 68 | 80.9% |
+| FRACTION | 11 | 54.5% |
+| MEASURE | 85 | 89.4% |
+| MONEY | 40 | 95.0% |
+| ORDINAL | 92 | 83.7% |
+| TIME | 6 | 83.3% |
+| **all** | **5,000** | **68.7%** |
 
-**Read the ITN column as close to meaningless.** The corpus has no canonical-written column,
-so ITN is scored against the written one — and that column is natural prose, where "scoring
-three goals" leaves "three" a word. Nothing in the spoken input says which numbers Wikipedia
-chose to spell out, so this measures conformance to a house style, not normalisation. It is
-the caveat `eval/README.md` already raises, in its sharpest form.
+How it got there, each step measured on the same slice:
 
-The TTS column is real, and it moved. It was **40.0%** before the year reading was licensed
-for a bare span; that one change was 147 of 300 mismatches. Categorising all 186 that remain:
+| | TTS |
+|---|---:|
+| four classes, year reading licensed only inside a date | 40.0% |
+| a bare four-digit number reads as a year | 62.8% |
+| the written shapes a corpus uses — `$26.6bn`, `2½`, `10am`, `18:00`, `Jun 29` | 64.3% |
+| `DECADE`, `RANGE`, `ABBREV`, `LETTERS`, Roman numerals, sentence-final full stops | **68.7%** |
+
+**The ITN column is not reported here, because it would not mean anything.** The corpus has no
+canonical-written column, so ITN can only be scored against the written one — and that column
+is natural prose, where "scoring three goals" leaves "three" a word. Nothing in the spoken
+input says which numbers Wikipedia chose to spell out, so the number measures conformance to a
+house style rather than normalisation. `eval/README.md` raises the caveat; this is its sharpest
+form. `./sayso_eval` still prints it.
+
+Categorising all 1,567 remaining TTS mismatches:
 
 | count | cause |
 |---:|---|
-| 134 | **day-first spoken dates** — Kestrel says "the twenty-eighth of february twenty sixteen" |
-| 10 | decades — `1970s`, which Sayso does not implement |
-| 10 | abbreviations with no table entry — `mr`→mister, `ltd`→limited, `ha`→hectares |
-| 9 | numeric ranges — `5 - 0` is "five **to** zero" |
-| 8 | abbreviated month names — `Jun 29, 2011` |
-| 6 | Roman numerals — `World War II` is "world war two" |
-| 5 | British→American spelling — `harbour`→`harbor`, `organisation`→`organization` |
-| 10 | everything else |
+| 1,318 | **day-first spoken dates** — Kestrel says "the twenty-eighth of february twenty sixteen" |
+| 52 | British→American spelling — `harbour`→`harbor`, `organisation`→`organization` |
+| 2 | bare all-caps acronyms |
+| 198 | a long tail: possessives, `/` inside names, bare `June 20` ordinalised, citation colons |
 
-Three things are worth saying plainly about that table.
+Which is to say: **one declined design decision is 84% of everything left.** Kestrel preserves
+written order in speech; Sayso canonicalises every written format to one spoken form, which is
+what makes ITN canonicalise at all and is pinned by both a test and a round-trip property.
+Matching Kestrel would be worth roughly another 26 points and would cost that property.
+`docs/DECISIONS.md` records the trade with the number attached. Without it, the ceiling on this
+slice is 95.0%.
 
-The first row is a **declined** design decision, not a defect. Kestrel preserves written order
-in speech; Sayso canonicalises every written format to one spoken form, which is what makes
-the ITN direction canonicalise at all and is pinned by both a test and a round-trip property.
-Matching Kestrel would be worth roughly another 27 points and would cost that property.
-`docs/DECISIONS.md` records the trade.
+The next two rows are out of scope by decision, not by omission — see
+[What is deliberately absent](#what-is-deliberately-absent). Only the last row is a to-do list,
+and it is now a long tail rather than a short list of missing classes.
 
-The last row is **not normalisation at all**. Kestrel Americanises spelling on its way past;
-that is a property of the reference, not a thing a text normaliser should reproduce.
-
-And the middle rows are the honest to-do list — decades, Roman numerals, ranges and
-abbreviation tables are real gaps, each small, each a table-plus-combinators file.
-
-The harness needed one change before any of this was measurable. Kestrel marks punctuation
+Two harness changes were needed before any of this was measurable. Kestrel marks punctuation
 `sil` — written but not spoken — so the reference spoken column has none, while Sayso copies
 punctuation through verbatim, which is what a TTS front end must do. Compared naively, every
-class scored 0.0% with almost every sentence failing on a comma. Relaxed scoring now drops
-standalone punctuation from both sides.
+class scored 0.0% with almost every sentence failing on a comma; relaxed scoring now drops
+standalone punctuation from both sides. And `--errors=N` prints every mismatch rather than ten,
+because ten samples tell you a pattern exists and never how often.
 
 ### Reproducing the NeMo columns
 
@@ -503,12 +590,19 @@ make test
 == money_date_tests      currency and dates, with round-trip properties
 == quantity_tests        decimals, fractions and measures, with round-trip properties
 == clock_tests           times, with a round-trip property over the whole day
+== lexical_tests         decades, abbreviations, acronyms, Roman numerals, ranges
 == pipeline_tests        Scalpel bridge, CLASSIFY, end-to-end normalisation
 ```
 
-128 tests. The grammar suites test a cascade on its own, so a case there says what a machine
+186 tests. The grammar suites test a cascade on its own, so a case there says what a machine
 can read and write; where two classes want the same span, the arbitration is the classifier's
-and lives in `pipeline_tests` instead.
+and lives in `pipeline_tests` instead — as does whether a one-directional class is offered at
+all in ITN, which is a property of the registry rather than of any grammar.
+
+A good number of these tests exist because a corpus found the bug first. The ones that pin a
+*refusal* are worth reading as a set: `10s` is not a decade because "tens" is a quantifier,
+`s.` is not an acronym because it is a sentence ending, `mix` is not a Roman numeral, `2011-11`
+is not a range, and `3 in` is not a measure.
 
 Each grammar is held to a round-trip property over seeded random input:
 `itn(tts(n)) == n` for integers and ordinals, for amounts in cents, for dates; and
@@ -527,19 +621,23 @@ sayso/
 │                           #   projection, inversion, composition, best path, Cascade
 ├── symbols.h/.cpp          # shared symbol table; written chars and spoken words
 ├── weights.h               # the entire weighting scheme, in one file
-├── numbers.h/.cpp          # cardinal and ordinal grammars, hyphenator
+├── numbers.h/.cpp          # cardinals, ordinals, years, Roman numerals, hyphenator
 ├── decimals.h/.cpp         # decimal grammar; the amount measures embed
 ├── fractions.h/.cpp        # fraction grammar, denominator table, mixed numbers
 ├── money.h/.cpp            # currency grammar
 ├── measures.h/.cpp         # measure grammar and the unit table
 ├── dates.h/.cpp            # canonical date grammar + written-format normalisers
 ├── times.h/.cpp            # clock-time grammar
+├── decades.h/.cpp          # decade grammar
+├── ranges.h/.cpp           # numeric ranges          — speaking only
+├── abbrev.h/.cpp           # lexical abbreviations   — speaking only
+├── letters.h/.cpp          # dotted acronyms         — speaking only
 ├── classify.h/.cpp         # CLASSIFY: the token-span lattice
 ├── text.h/.cpp             # Scalpel bridge and offset repair
 ├── normalizer.h/.cpp       # the pipeline, end to end
 ├── property.h              # seeded property-test harness with shrinking
 ├── sayso_main.cpp          # CLI
-├── *_tests.cpp             # six test binaries
+├── *_tests.cpp             # seven test binaries
 ├── docs/DECISIONS.md       # every design call, with its alternative and rationale
 └── eval/
     ├── eval_main.cpp         # accuracy both directions, per class, throughput
@@ -558,19 +656,25 @@ sayso/
   to have CLASSIFY emit an n-best lattice rather than a single best path, and rerank it with a
   contextual model — which keeps the grammars as the source of what is *possible* and lets the
   model choose only among things that already are.
-- **More semiotic classes.** `DECIMAL`, `FRACTION`, `MEASURE` and `TIME` are in, and adding
-  them needed nothing new from the engine or CLASSIFY, which was the claim. What is left is
-  the classes whose written forms are not built out of numbers: telephone numbers, addresses,
-  electronic (URLs, emails), `LETTERS` and `VERBATIM`. Those are a different shape — mostly
-  character-level spelling-out rather than field structure — and the last two in particular
-  are what a real corpus is full of: they were the largest group the converter dropped.
-- **The gaps the real slice named.** In order of how often they cost a sentence: decades
-  (`1970s`), abbreviations the measure table has no entry for (`ltd`, `ha`, `mr`), numeric
-  ranges (`5 - 0` as "five to zero"), abbreviated month names, and Roman numerals. None is
-  more than ten sentences in five hundred, and each is another small table.
-- **Optional written-format output.** ITN currently canonicalises hard — every spoken date
-  becomes `M/D/YYYY`. Making the target format a parameter is a matter of moving the format
-  penalties into a runtime table.
+- **More semiotic classes.** Eight were added after the first four, and none of them needed
+  anything new from the engine or CLASSIFY — which was the architecture's claim, now tested.
+  What is left is `TELEPHONE`, `ADDRESS` and `ELECTRONIC`: 1.9% of semiotic tokens between
+  them, and a different shape entirely, since the corpus spells a URL out character by
+  character with a `_letter` suffix on each. `TELEPHONE` is the one worth having, and not for
+  its own sake — it is the class that would stop `RANGE` mis-reading an ISBN.
+- **Bare all-caps acronyms, if CLASSIFY ever sees case.** `LETTERS` reads dotted shapes only
+  because spans are case-folded before a grammar sees them. Giving the classifier the
+  unfolded span alongside the folded one would unlock the largest single shape in the data.
+  That is a change to the pipeline rather than to any grammar, which is why it has not been
+  made lightly.
+- **Optional written-format output, which is now the biggest single win available.** ITN
+  canonicalises hard: every spoken date becomes `M/D/YYYY`, and every written date is spoken
+  month-first. That second half is 84% of everything the corpus still disagrees with — 1,318
+  of 1,567 mismatches — because Kestrel preserves written order in speech and Sayso does not.
+  Making the format a runtime parameter, defaulting to today's behaviour, would let a caller
+  ask for the order-preserving reading without giving up the property that one spoken form
+  round-trips to one written form. The penalties are already isolated in `weights.h`; moving
+  them into a table is most of the work.
 - **A faster cold path still.** Prefix composition and then the factoring described above have
   taken the remaining cost down to real composition work rather than repetition, and it is now
   concentrated in one place: DATE is roughly half of what a cold sentence costs, and unlike

@@ -61,13 +61,19 @@ To use it:
    `<eos>` marking sentence ends, `<self>` meaning "unchanged" and `sil` meaning "not spoken"
    (which is what punctuation is). The script reassembles sentences and keeps only those whose
    semiotic content Sayso implements, reporting on stderr how many it dropped and why. Scoring
-   an eight-class normaliser on sentences containing ELECTRONIC or TELEPHONE would measure the
-   absence of those classes rather than the quality of the eight that exist; pass `--keep-all`
+   a twelve-class normaliser on sentences containing ELECTRONIC or TELEPHONE would measure the
+   absence of those classes rather than the quality of the twelve that exist; pass `--keep-all`
    if that is what you want to see.
 
    `convert_google_tn.py` decides what to keep from a list of implemented classes, so it needs
-   updating whenever a class is added — `DECIMAL`, `FRACTION`, `MEASURE` and `TIME` are in that
-   list now, and sentences containing them are no longer dropped.
+   updating whenever a class is added. All eight of the corpus's numeric classes are in that
+   list. `DECADE`, `RANGE` and `ABBREV` need no entry: the corpus files decades under DATE and
+   both of the others under PLAIN, which is never dropped.
+
+   What is still dropped is `LETTERS`, `VERBATIM`, `ELECTRONIC`, `TELEPHONE`, `DIGIT` and
+   `ADDRESS`. Sayso reads dotted acronyms but not the bare all-caps runs that make up most of
+   `LETTERS`, so those sentences are excluded rather than scored as failures; see the note on
+   what is deliberately absent in the top-level README.
 
 That is all — `sayso_eval` reads `data/google_tn_slice.tsv` with no further arguments. The
 dataset has no canonical-written column, so the report will say ITN is scored against the

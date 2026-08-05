@@ -16,10 +16,10 @@ Usage:
     python3 convert_google_tn.py output-00000-of-00100 > data/google_tn_slice.tsv
 
 Only sentences whose semiotic content Sayso actually implements are kept, and
-the count of everything dropped is reported on stderr — scoring an eight-class
+the count of everything dropped is reported on stderr — scoring a twelve-class
 normaliser on sentences containing ELECTRONIC or TELEPHONE would measure the absence
-of those classes, not the quality of the eight that exist. Pass --classes to
-change the set, or --keep-all to disable the filter and see what the eight
+of those classes, not the quality of the twelve that exist. Pass --classes to
+change the set, or --keep-all to disable the filter and see what the twelve
 classes score on unrestricted text.
 
 One property of the reconstruction is worth knowing: the dataset stores tokens,
