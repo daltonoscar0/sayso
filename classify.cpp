@@ -56,7 +56,7 @@ const std::vector<Grammar>& grammars(DateSpeech speech) {
         {SemioticClass::ORDINAL,  &ordinal_grammar(),  kOrdinalEntry},
         {SemioticClass::CARDINAL, &cardinal_grammar(), kCardinalEntry},
         // One-directional; see the note on Grammar::speaking_only.
-        {SemioticClass::LETTERS,  &letters_grammar(),  kLettersEntry, true},
+        {SemioticClass::LETTERS,  &letters_grammar(),  kLettersEntry, true, true},
         {SemioticClass::ABBREV,   &abbreviation_grammar(), kAbbreviationEntry, true},
         {SemioticClass::RANGE,    &range_grammar(),    kRangeEntry, true},
         {SemioticClass::TELEPHONE, &telephone_grammar(), kTelephoneEntry, true},
@@ -82,13 +82,14 @@ struct SpanLabels {
 // collapse to one space); spoken spans are just their words. Both are case
 // folded, since the grammars are written in one case.
 SpanLabels span_labels(const std::string& input, const std::vector<Token>& tokens,
-                       size_t begin, size_t end, Direction dir) {
+                       size_t begin, size_t end, Direction dir, bool fold) {
     SpanLabels out;
     out.boundary.push_back(0);
 
     if (dir == Direction::ITN) {
         for (size_t k = begin; k < end; ++k) {
-            out.labels.push_back(word(fold_case(tokens[k].text)));
+            out.labels.push_back(
+                word(fold ? fold_case(tokens[k].text) : tokens[k].text));
             out.boundary.push_back(out.labels.size());
         }
         return out;
@@ -106,7 +107,7 @@ SpanLabels span_labels(const std::string& input, const std::vector<Token>& token
             if (!in_space) out.labels.push_back(ch(" "));
         } else {
             std::string one;
-            utf8::append(one, utf8::to_lower(cp));
+            utf8::append(one, fold ? utf8::to_lower(cp) : cp);
             out.labels.push_back(ch(one));
         }
         in_space = space;
@@ -175,8 +176,11 @@ std::vector<Segment> classify(const std::string& input,
         // Every span from this start is answered by one run per grammar over
         // the longest of them.
         size_t last = std::min(n, i + max_span_tokens(dir));
-        SpanLabels span = span_labels(input, tokens, i, last, dir);
+        SpanLabels span = span_labels(input, tokens, i, last, dir, true);
         if (span.labels.empty()) continue;
+        // Folding is per codepoint, so the two label sequences agree on
+        // length and on every token boundary; only the labels differ.
+        SpanLabels cased = span_labels(input, tokens, i, last, dir, false);
         size_t from = static_cast<size_t>(tokens[i].start_index);
         std::string longest = input.substr(
             from, static_cast<size_t>(tokens[last - 1].end_index) - from);
@@ -192,9 +196,11 @@ std::vector<Segment> classify(const std::string& input,
                     entry.emplace_back();
                     continue;
                 }
+                const std::vector<Label>& labels =
+                    grammar.wants_case ? cased.labels : span.labels;
                 std::vector<Path> paths =
-                    dir == Direction::TTS ? grammar.grammar->apply_prefixes(span.labels)
-                                          : grammar.grammar->apply_prefixes_inverse(span.labels);
+                    dir == Direction::TTS ? grammar.grammar->apply_prefixes(labels)
+                                          : grammar.grammar->apply_prefixes_inverse(labels);
                 // Only up to the last prefix this grammar actually read. The
                 // overwhelming majority of (span, class) pairs match nothing
                 // at all, and storing a full-length vector of misses for each

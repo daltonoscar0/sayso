@@ -40,7 +40,12 @@ from collections import Counter
 NEUTRAL = {"PLAIN", "PUNCT"}
 
 DEFAULT_CLASSES = ["CARDINAL", "ORDINAL", "DECIMAL", "FRACTION",
-                   "MONEY", "MEASURE", "DATE", "TIME"]
+                   "MONEY", "MEASURE", "DATE", "TIME", "TELEPHONE"]
+
+# LETTERS is implemented only in part — a table of the commonest acronyms,
+# covering about half the token mass against 15,000 distinct types — so it is
+# not in the default set. Pass --classes to add it and see the broader,
+# lower number; the top-level README quotes both.
 
 
 def sentences(handle):

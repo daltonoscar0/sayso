@@ -168,6 +168,27 @@ static void letters_tests() {
     check(tts(letters_grammar(), "u.s") == "u s",
           "the last full stop may be missing");
 
+    // The acronym table, and the reason it is a table. A general "two or more
+    // capitals" rule is 70% right on the corpus: Roman numerals, acronyms
+    // English says as words, and caps-lock prose make up the rest.
+    check(table(letters_grammar(),
+                {
+                    {"PDF", "p d f"},
+                    {"ISBN", "i s b n"},
+                    {"BBC", "b b c"},
+                    {"US", "u s"},
+                },
+                false),
+          "the commonest acronyms are spelled out");
+
+    // This is the branch that needs the span unfolded: "US" is an acronym and
+    // "us" is a pronoun, and the capital is all that separates them.
+    check(tts(letters_grammar(), "us") == "<none>" &&
+              tts(letters_grammar(), "it") == "<none>" &&
+              tts(letters_grammar(), "FIFA") == "<none>" &&
+              tts(letters_grammar(), "THE") == "<none>",
+          "a lower-case word, and an acronym off the table, are left alone");
+
     // Two letters minimum. A one-letter rule reads the [s] [.] of "the 1980s."
     // as a dotted initial, which both spells out the decade's plural and eats
     // the sentence's full stop, because a claimed span is replaced whole.

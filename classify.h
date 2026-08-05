@@ -58,6 +58,15 @@ struct Grammar {
     const Cascade* grammar;
     float entry_cost;
     bool speaking_only = false;
+    // Whether this grammar wants the span with its case intact.
+    //
+    // CLASSIFY folds case before a grammar sees a span, because the spoken
+    // side is lowercase by construction and almost every written form Sayso
+    // produces has no letters in it. LETTERS is the exception: "US" is an
+    // acronym and "us" is a pronoun, and nothing but the capital tells them
+    // apart. It is one flag rather than a second pipeline — the same span,
+    // interned twice.
+    bool wants_case = false;
 };
 // The registry depends on the date option, which selects one of two date
 // cascades. Everything else in it is shared.
