@@ -615,7 +615,7 @@ make test
 == pipeline_tests        Scalpel bridge, CLASSIFY, end-to-end normalisation
 ```
 
-196 tests. The grammar suites test a cascade on its own, so a case there says what a machine
+198 tests. The grammar suites test a cascade on its own, so a case there says what a machine
 can read and write; where two classes want the same span, the arbitration is the classifier's
 and lives in `pipeline_tests` instead — as does whether a one-directional class is offered at
 all in ITN, which is a property of the registry rather than of any grammar.
