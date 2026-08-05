@@ -238,6 +238,13 @@ static void range_tests() {
               "sixteen twenty-four to seventeen thirteen",
           "a four-digit operand is read as a year");
 
+    // The right operand may carry the unit for both halves. Without this,
+    // RANGE claimed "5-10" and left the "%" to PLAIN, giving "five to ten%".
+    check(tts(range_grammar(), "5-10%") == "five to ten percent" &&
+              tts(range_grammar(), "21-26mm") ==
+                  "twenty-one to twenty-six millimeters",
+          "the right operand may carry a unit");
+
     // The structural guard: a four-digit number followed by a two-digit one in
     // 01-12 is the year-month prefix of an ISO date, and is refused outright
     // rather than left to the entry cost.

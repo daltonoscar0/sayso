@@ -21,4 +21,9 @@ namespace sayso {
 
 const Cascade& measure_grammar();
 
+// The same machine before hyphenation, for a grammar that wants a measure as
+// one of its own fields. The range grammar is the one that does: the right
+// operand of "1-2%" and "21-26mm" carries the unit for both halves.
+const Wfst& measure_core_fst();
+
 }  // namespace sayso

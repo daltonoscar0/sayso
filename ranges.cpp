@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "measures.h"
 #include "numbers.h"
 #include "weights.h"
 
@@ -56,7 +57,13 @@ Wfst build_range() {
     const NumberParts& p = number_parts();
 
     Wfst short_operand = union_of({one_digit(), two_digits_from(10), p.three_nz});
-    Wfst any_operand = union_of({short_operand, four_digits()});
+
+    // The right operand may carry the unit for both halves: "1-2%" is "one to
+    // two percent", "21-26mm" is "twenty-one to twenty-six millimeters". A
+    // measure always ends in its unit, so admitting one here cannot be
+    // confused with the month field the guard below refuses.
+    const Wfst& measure = measure_core_fst();
+    Wfst any_operand = union_of({short_operand, four_digits(), measure});
 
     // The one structural guard, and the reason it is structural rather than a
     // weight: a four-digit number followed by a two-digit one in 01-12 is the
@@ -64,7 +71,7 @@ Wfst build_range() {
     // keeps "2011-11-11" a date; leaving it to the entry cost worked only
     // while zero-padding happened to make the alternative expensive.
     Wfst not_a_month = union_of({one_digit(), two_digits_from(13), p.three_nz,
-                                 four_digits()});
+                                 four_digits(), measure});
 
     // Hyphen only. The en dash does not occur in the corpus at all and every
     // one of the 11,063 em dashes is silent; the colon is 95.7% bibliographic

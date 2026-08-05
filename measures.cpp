@@ -142,17 +142,24 @@ Wfst build_measure() {
         plural_tails.push_back(concat_of({separator, symbol,
                                           words_out(u.plural, kPluralPreferenceMargin)}));
     }
-    return connect(hyphenated(union_of({
+    return connect(union_of({
         concat_of({rule("1", {"one"}), union_of(singular_tails)}),
         concat_of({amount, union_of(plural_tails)}),
-    })));
+    }));
 }
 
 }  // namespace
 
-const Cascade& measure_grammar() {
+const Wfst& measure_core_fst() {
     static const Wfst core = build_measure();
-    static const Cascade grammar = Cascade().then(core);
+    return core;
+}
+
+const Cascade& measure_grammar() {
+    // The core is left unhyphenated so a caller can embed it and hyphenate
+    // its own span once; the class itself hyphenates here.
+    static const Wfst joined = hyphenated(measure_core_fst());
+    static const Cascade grammar = Cascade().then(joined);
     return grammar;
 }
 
