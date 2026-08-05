@@ -25,7 +25,18 @@ the real and synthetic slices can sit side by side:
 ./generate_slice data/synthetic_slice.tsv # write a synthetic one somewhere else
 ./sayso_eval data/synthetic_slice.tsv --relaxed
 ./sayso_eval --relaxed --errors=1000      # every mismatch, for categorising
+./sayso_eval --relaxed --preserve-date-order   # the reference's spoken date order
 ```
+
+Three real slices sit side by side in `data/`, and the third is the one that means anything:
+
+| file | what it is |
+|---|---|
+| `google_tn_slice.tsv` | 5,000 sentences from shard 00099 — the slice the grammars were developed against |
+| `heldout_slice.tsv` | 5,000 more from later in the same shard, never read while developing |
+| `shard98_slice.tsv` | 5,000 from shard 00098, a different shard fetched after every weight was fixed |
+
+Score against the last of those before believing any change helped.
 
 One example per line, `#` for comments:
 

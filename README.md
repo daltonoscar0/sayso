@@ -14,9 +14,9 @@ Input   →  "it costs twenty-five dollars and ten cents on march fourteenth twe
 ITN     →  "it costs $25.10 on 3/14/2015."
 ```
 
-Twelve semiotic classes: `CARDINAL`, `ORDINAL`, `DECIMAL`, `FRACTION`, `MONEY`, `MEASURE`,
-`DATE`, `TIME`, `DECADE`, `RANGE`, `ABBREV`, `LETTERS`. Everything else passes through byte for
-byte.
+Thirteen semiotic classes: `CARDINAL`, `ORDINAL`, `DECIMAL`, `FRACTION`, `MONEY`, `MEASURE`,
+`DATE`, `TIME`, `DECADE`, `RANGE`, `ABBREV`, `LETTERS`, `TELEPHONE`. Everything else passes
+through byte for byte.
 
 ```
 Input   →  "The 2.5 km run starts at 6:45 am; 3/4 of the field paid £12.50."
@@ -27,7 +27,8 @@ Input   →  "St Paul's, vol 3, pp 1-10, e.g. the 1980s."
 TTS     →  "saint Paul's, volume three, pp one to ten, e g the nineteen eighties."
 ```
 
-Nine of the twelve are bidirectional. Three — `RANGE`, `ABBREV`, `LETTERS` — only speak; see
+Nine of the thirteen are bidirectional. Four — `RANGE`, `ABBREV`, `LETTERS`, `TELEPHONE` —
+only speak; see
 [One-directional classes](#one-directional-classes) for why that is a property of those
 classes rather than a hole in the design.
 
@@ -63,7 +64,7 @@ grammar, put the sentence back together.
 │  Each grammar is run once per span *start*, not once per     │
 │  span: every arc leaving state i comes from one composition. │
 └────────────────────┬─────────────────────────────────────────┘
-                     │  spans: one of twelve classes, or PLAIN
+                     │  spans: one of thirteen classes, or PLAIN
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  per-class grammar — a composition of WFSTs                  │
@@ -79,7 +80,8 @@ grammar, put the sentence back together.
 │    DECADE    century-pair · pluralised-tens, hyphenated      │
 │    RANGE     number · hyphen→"to" · number, hyphenated       │
 │    ABBREV    a lexical table            ── speaking only     │
-│    LETTERS   (letter ".")+ letter?      ── speaking only     │
+│    LETTERS   dotted initials, acronym table ─ speaking only  │
+│    TELEPHONE digits-hyphen-digits ×4    ── speaking only     │
 │                                                              │
 │  Small compositions are done once at build time; the large   │
 │  ones are a Cascade, composed against the input instead.     │
@@ -225,7 +227,8 @@ Born december twenty-fifth nineteen ninety-nine, she paid three pounds.
 | `DECADE` | `1970s`, `1900s`, `2000s`, `'80s` | `nineteen seventies`, `nineteen hundreds`, `two thousands`, `eighties` |
 | `RANGE` | `1-10`, `5 - 0`, `1729-1811` | `one to ten`, `seventeen twenty-nine to eighteen eleven` |
 | `ABBREV` | `St`, `vol`, `Dr`, `vs`, `Mt`, `Ltd` | `saint`, `volume`, `doctor`, `versus` |
-| `LETTERS` | `U.S.`, `D.C.`, `e.g.` | `u s`, `d c`, `e g` |
+| `LETTERS` | `U.S.`, `D.C.`, `e.g.`, `PDF`, `BBC` | `u s`, `d c`, `e g`, `p d f`, `b b c` |
+| `TELEPHONE` | `978-0-131-40221-8` | `nine seven eight o one three one …` |
 
 Roman numerals live inside `CARDINAL` rather than in a class of their own, because they are a
 written-side spelling of a small integer: `World War II` is `world war two`.
@@ -240,10 +243,12 @@ reason — the classifier has no context, so a grammar that reads more also mis-
 - **The abbreviation table** omits every abbreviation commoner as a word. `no` expands to
   `number` 288 times in the corpus shard and is the word "no" 8,805 times, so it is out; `co`,
   `min` and `col` go with it.
-- **`LETTERS` reads dotted shapes only.** Spans are case-folded before a grammar sees them, so
-  nothing can tell `PDF` from `pdf`; a bare-letter-run branch would spell out every lower-case
-  word it met. The dots are the only signal that survives folding. `PDF` therefore stays `PDF`,
-  which costs the largest shape in the data and was still the right trade.
+- **`LETTERS` reads dotted shapes, and a table of acronyms.** A general "two or more capitals"
+  rule is 70% right on the corpus — the other 30% being Roman numerals, acronyms English says
+  as words (`FIFA`, `NASA`), and caps-lock prose — which would make it by a wide margin the
+  least reliable thing here. The table is the 396 all-caps types among the corpus's 400
+  commonest that the reference spells out at least 95% of the time. It is also the one grammar
+  that asks for the span with its case intact: `US` is an acronym and `us` is a pronoun.
 - **Roman numerals are a table, not a parser.** A parser over `M`, `D`, `C`, `L`, `X`, `V`, `I`
   accepts `MIX`, `DID` and `CIVIC`; single letters are excluded outright, since `I` alone is
   overwhelmingly the pronoun.
@@ -428,10 +433,11 @@ them against each other in one sitting or not at all:
 |---|---:|---:|---:|
 | four-class build | 4 | 262/s | 62,500/s |
 | eight-class build | 8 | 283/s | 76,700/s |
-| this build | **12** | **237/s** | **79,000/s** |
+| this build | **13** | **217/s** | **78,000/s** |
 
-Three times the semiotic classes for 10% off the cold path, and the warm path 26% faster than
-it was with four. The eight-class row is where the factoring below paid off; the last four
+More than three times the semiotic classes for 17% off the cold path, and the warm path 25%
+faster than it was with four. Most of that cold-path cost is not the grammars: it is the
+written span cap going from eight tokens to ten, which a five-group ISBN needs. The eight-class row is where the factoring below paid off; the last four
 classes are what it bought.
 
 All three rows are medians of four runs, taken in one session, alternating between the builds
@@ -503,9 +509,18 @@ over thirty thousand lines of corpus, against 0.13 GB now** — with the warm pa
 faster for the better locality. The map is also capped, since nothing trimmed it and a
 long-lived process would have grown without bound on novel text.
 
-DATE is now the most expensive grammar in the library and is not helped by any of this — its
-cost is its size, four written formats composed against a canonical machine, and factoring has
-nothing to take out. It is the obvious place to look next.
+DATE is the most expensive grammar per span — 1.9 ms against MONEY's 0.6 — and for a while
+this file said it was therefore about half of what a cold sentence costs. That was wrong, and
+worth recording as wrong: a per-span benchmark measures only the spans that reach a grammar,
+and the FIRST/LAST prefilters answer for DATE on nearly all of them. A sampling profile puts
+the cold path in `compose` itself, spread across arc iteration and the composed-state map
+rather than in any one grammar.
+
+Two obvious follow-ons were tried and reverted: an open-addressed replacement for that map,
+which removed the per-state allocation the profile pointed at, and a flat table for interning
+ASCII characters. Neither moved the wall clock outside run-to-run noise, so neither shipped.
+Weighted determinisation of the date grammar, long listed here as the next step, would buy
+nothing either — its premise was the same wrong claim.
 
 ### On the real Google TN slice
 
@@ -514,9 +529,24 @@ Everything above is the synthetic slice. This is 5,000 sentences of Wikipedia fr
 Google's Kestrel and used as the reference. It is the only number here that measures agreement
 with something other than Sayso's own conventions.
 
-**TTS 68.8%** on the 5,000 sentences the grammars were developed against, and **65.9%** on a
-disjoint 5,000 from later in the same shard that nothing was ever tuned on. The second is the
-honest number; the gap between them is the price of having looked at the first.
+**TTS 93.9%**, with `--date-order preserve`. Three slices, and the third is the one that
+matters:
+
+| slice | TTS |
+|---|---:|
+| shard 00099, the 5,000 sentences developed against | 93.9% |
+| shard 00099, a disjoint 5,000 from later in the file | 93.9% |
+| **shard 00098, a different shard, downloaded after every weight was fixed** | **93.6%** |
+
+Three tenths of a point across an unseen shard is what no overfitting looks like. It was not
+always so: under the default `--date-order canonical` the same three slices give 68.8%, 65.9%
+and about the same, and that 2.9-point gap was almost entirely DATE — the class the option
+fixes. Getting the dates right removed the overfitting along with the errors.
+
+Two caveats belong with that number. It is measured on sentences whose semiotic content Sayso
+implements: with the partially-implemented `LETTERS` sentences included it is **71.0%**, since
+the acronym table covers about half the token mass against 15,000 distinct types. And the
+default mode, which preserves the one-spoken-form property, is the 68.8% column.
 
 | class | n | TTS |
 |---|---:|---:|
@@ -530,23 +560,6 @@ honest number; the gap between them is the price of having looked at the first.
 | TIME | 6 | 83.3% |
 | **all** | **5,000** | **68.8%** |
 
-And held out — never read while developing:
-
-| class | n | TTS |
-|---|---:|---:|
-| CARDINAL | 978 | 85.6% |
-| DATE | 3,764 | 59.5% |
-| DECIMAL | 51 | 80.4% |
-| MEASURE | 66 | 84.8% |
-| MONEY | 40 | 95.0% |
-| ORDINAL | 89 | 85.4% |
-| FRACTION / TIME | 6 each | 50.0% / 66.7% |
-| **all** | **5,000** | **65.9%** |
-
-MEASURE falls furthest, by 5.8 points, and that is exactly where overfitting would show: its
-unit table was written by reading off which units the *first* slice happened to contain. MONEY,
-whose grammar is structural rather than tabular, does not move at all. The rest sit within a
-few points, which is about what one shard's worth of Wikipedia variance looks like.
 
 How it got there, each step measured on the same slice:
 
@@ -635,7 +648,7 @@ make test
 == pipeline_tests        Scalpel bridge, CLASSIFY, end-to-end normalisation
 ```
 
-198 tests. The grammar suites test a cascade on its own, so a case there says what a machine
+210 tests. The grammar suites test a cascade on its own, so a case there says what a machine
 can read and write; where two classes want the same span, the arbitration is the classifier's
 and lives in `pipeline_tests` instead — as does whether a one-directional class is offered at
 all in ITN, which is a property of the registry rather than of any grammar.

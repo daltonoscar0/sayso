@@ -178,12 +178,22 @@ std::vector<Segment> classify(const std::string& input,
         size_t last = std::min(n, i + max_span_tokens(dir));
         SpanLabels span = span_labels(input, tokens, i, last, dir, true);
         if (span.labels.empty()) continue;
-        // Folding is per codepoint, so the two label sequences agree on
-        // length and on every token boundary; only the labels differ.
-        SpanLabels cased = span_labels(input, tokens, i, last, dir, false);
         size_t from = static_cast<size_t>(tokens[i].start_index);
         std::string longest = input.substr(
             from, static_cast<size_t>(tokens[last - 1].end_index) - from);
+
+        // Only a span with a capital in it needs interning twice. Folding is
+        // per codepoint, so the two label sequences agree on length and on
+        // every token boundary; where the text has no capital they are equal,
+        // and building the second was pure cost on the span-start path — which
+        // is what the cold path actually is, the grammars being answered by
+        // their prefilters.
+        bool has_capital = false;
+        for (char c : longest)
+            if (c >= 'A' && c <= 'Z') { has_capital = true; break; }
+        SpanLabels cased =
+            has_capital ? span_labels(input, tokens, i, last, dir, false) : SpanLabels();
+        const SpanLabels& with_case = has_capital ? cased : span;
 
         std::string key = std::string(1, dir == Direction::TTS ? 't' : 'i') +
                           (speech == DateSpeech::Canonical ? 'c' : 'p') + "\t" + longest;
@@ -197,7 +207,7 @@ std::vector<Segment> classify(const std::string& input,
                     continue;
                 }
                 const std::vector<Label>& labels =
-                    grammar.wants_case ? cased.labels : span.labels;
+                    grammar.wants_case ? with_case.labels : span.labels;
                 std::vector<Path> paths =
                     dir == Direction::TTS ? grammar.grammar->apply_prefixes(labels)
                                           : grammar.grammar->apply_prefixes_inverse(labels);

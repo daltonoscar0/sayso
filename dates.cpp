@@ -271,15 +271,21 @@ const Cascade& date_grammar(DateSpeech speech) {
     // between them differs, which is what keeps the option from doubling the
     // largest grammar in the library.
     static const Wfst formats = build_formats();
-    static const Wfst spoken =
-        connect(union_of({canonical_date(), day_first_spoken()}));
     static const Wfst canonical_orientation = connect(drop_marker());
     static const Wfst preserved_orientation = reorient();
 
+    // Two speaking machines, not one shared. The day-first branch is
+    // unreachable under Canonical — the orientation stage has already dropped
+    // its marker — but a machine does not know that, and composition would
+    // explore it on every span. Each mode carries only what it can reach.
+    static const Wfst month_first_only = connect(canonical_date());
+    static const Wfst either_order =
+        connect(union_of({canonical_date(), day_first_spoken()}));
+
     static const Cascade canonical_grammar =
-        Cascade().then(formats).then(canonical_orientation).then(spoken);
+        Cascade().then(formats).then(canonical_orientation).then(month_first_only);
     static const Cascade preserving_grammar =
-        Cascade().then(formats).then(preserved_orientation).then(spoken);
+        Cascade().then(formats).then(preserved_orientation).then(either_order);
 
     return speech == DateSpeech::Canonical ? canonical_grammar : preserving_grammar;
 }
