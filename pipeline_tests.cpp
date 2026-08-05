@@ -272,6 +272,88 @@ static void class_competition_tests() {
           "known limitation: a colon between numbers is always a time");
 }
 
+// ---- the classes that only speak ---------------------------------------------
+//
+// Three classes are registered `speaking_only`, and this is what that buys.
+// Each of them would, run backwards, rewrite ordinary English: every "saint"
+// would contract to "st", every pair of spoken letters would glue into an
+// acronym, and every "five to ten" would become "5-10". No weight can prevent
+// it, because CLASSIFY prices PLAIN per character and a five-letter word costs
+// 5.0 against a class entry cost of 0.05.
+
+static void one_directional_tests() {
+    check(normalize("St Paul", Direction::TTS) == "saint Paul" &&
+              normalize("vol 3", Direction::TTS) == "volume three" &&
+              normalize("Smith vs Jones", Direction::TTS) == "Smith versus Jones",
+          "abbreviations expand when speaking");
+
+    check(normalize("saint paul", Direction::ITN) == "saint paul" &&
+              normalize("volume three", Direction::ITN) == "volume 3",
+          "and do not contract when writing");
+
+    // A lone initial is left alone: LETTERS needs two letters, because a
+    // one-letter rule would read the [s] [.] of "the 1980s." as an initial.
+    check(normalize("U.S. policy", Direction::TTS) == "u s policy" &&
+              normalize("e.g. this", Direction::TTS) == "e g this" &&
+              normalize("J. Smith", Direction::TTS) == "J. Smith",
+          "dotted acronyms are spelled out when speaking, lone initials are not");
+
+    // The trailing full stop Scalpel attaches to a short token, split back off
+    // by the adapter. Without it a sentence-final decade or measure is
+    // unclaimable, and whatever did claim it would eat the full stop.
+    check(normalize("the 1980s.", Direction::TTS) == "the nineteen eighties." &&
+              normalize("5 km.", Direction::TTS) == "five kilometers." &&
+              normalize("at 3:30 p.m.", Direction::TTS) == "at three thirty p m",
+          "a sentence-final full stop survives, and its span still classifies");
+
+    check(normalize("u s policy", Direction::ITN) == "u s policy" &&
+              normalize("a and I went", Direction::ITN) == "a and I went",
+          "and single letters are not glued back into acronyms");
+
+    check(normalize("pp 1-10", Direction::TTS) == "pp one to ten" &&
+              normalize("five to ten people", Direction::ITN) == "5 to 10 people",
+          "a range speaks as 'to', and 'to' is not written back as a hyphen");
+}
+
+// ---- the newer classes against the older ones ---------------------------------
+
+static void later_class_tests() {
+    // A range's shape is the prefix of an ISO date's. The guard is structural
+    // — ranges.cpp refuses a four-digit operand followed by a month-shaped one
+    // — because relying on the entry cost worked only while zero-padding
+    // happened to make the alternative expensive.
+    check(tagging("2011-11-11", Direction::TTS) == "DATE(2011-11-11)" &&
+              tagging("2015-03-14", Direction::TTS) == "DATE(2015-03-14)" &&
+              tagging("1729-1811", Direction::TTS) == "RANGE(1729-1811)",
+          "a date outranks a range over the same characters");
+
+    // And a colon is a time, never a ratio: the colon branch was cut from
+    // RANGE because it was 96% bibliographic citation in the corpus.
+    check(tagging("9:30", Direction::TTS) == "TIME(9:30)",
+          "a colon between numbers stays a time");
+
+    check(tagging("1970s", Direction::TTS) == "DECADE(1970s)" &&
+              tagging("1970", Direction::TTS) == "CARDINAL(1970)",
+          "a decade is its own class, a bare year is a cardinal");
+
+    // Roman numerals live inside CARDINAL, which is what makes them safe: the
+    // digits are always the cheaper written form.
+    check(tagging("World War II", Direction::TTS) ==
+              "PLAIN(World) PLAIN(War) CARDINAL(II)" &&
+              normalize("world war two", Direction::ITN) == "world war 2",
+          "a Roman numeral is a cardinal, and never what ITN writes");
+
+    check(normalize("Retrieved Jun 29, 2011 in the 1980s.", Direction::TTS) ==
+              "Retrieved june twenty-ninth twenty eleven in the nineteen eighties.",
+          "an abbreviated month and a decade in one sentence");
+
+    check(normalize("St Paul's, vol 3, pp 1-10, e.g. 1729-1811.",
+                    Direction::TTS) ==
+              "saint Paul's, volume three, pp one to ten, e g seventeen "
+              "twenty-nine to eighteen eleven.",
+          "five of the later classes in one sentence");
+}
+
 int main() {
     tokenizer_tests();
     classify_tests();
@@ -279,6 +361,8 @@ int main() {
     normalisation_tests();
     ambiguity_tests();
     class_competition_tests();
+    one_directional_tests();
+    later_class_tests();
     std::cout << "\nTests run:" << run << "\nTests failed: " << failed << "\n";
     return failed == 0 ? 0 : 1;
 }

@@ -22,7 +22,7 @@
 namespace sayso {
 
 enum class SemioticClass {
-    PLAIN, CARDINAL, ORDINAL, DECIMAL, FRACTION, MONEY, MEASURE, DATE, TIME
+    PLAIN, CARDINAL, ORDINAL, DECIMAL, FRACTION, MONEY, MEASURE, DATE, TIME, DECADE, ABBREV, LETTERS, RANGE
 };
 const char* class_name(SemioticClass c);
 
@@ -39,10 +39,24 @@ struct Segment {
 
 // A class grammar, always oriented written->spoken; classify() applies the
 // cascade in reverse when asked for ITN.
+//
+// `speaking_only` marks the classes that must not be read backwards. This is
+// not a second grammar and not a weakening of the one-grammar rule — the
+// machine is still written once and still inverted for everything else. It
+// records that a *class* is one-directional: expanding "St" to "saint" is
+// normalisation, contracting "saint" to "St" is not, and no weight can express
+// that difference here. PLAIN is priced per character, so a five-letter word
+// costs 5.0 against a class entry cost of 0.05; a lexical class can always
+// outbid leaving the word alone, whichever way it is pointing.
+//
+// Only classes whose written side is drawn from ordinary English need it.
+// Every numeric class stays bidirectional, because there a plain numeral is
+// already the cheaper written form and the weights settle it.
 struct Grammar {
     SemioticClass type;
     const Cascade* grammar;
     float entry_cost;
+    bool speaking_only = false;
 };
 const std::vector<Grammar>& grammars();
 

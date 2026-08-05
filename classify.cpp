@@ -3,12 +3,16 @@
 #include <unordered_map>
 
 #include "../Scalpel/utf8.h"
+#include "abbrev.h"
 #include "dates.h"
+#include "decades.h"
 #include "decimals.h"
 #include "fractions.h"
+#include "letters.h"
 #include "measures.h"
 #include "money.h"
 #include "numbers.h"
+#include "ranges.h"
 #include "text.h"
 #include "times.h"
 #include "weights.h"
@@ -25,6 +29,10 @@ const char* class_name(SemioticClass c) {
         case SemioticClass::MEASURE:  return "MEASURE";
         case SemioticClass::DATE:     return "DATE";
         case SemioticClass::TIME:     return "TIME";
+        case SemioticClass::DECADE:   return "DECADE";
+        case SemioticClass::ABBREV:   return "ABBREV";
+        case SemioticClass::LETTERS:  return "LETTERS";
+        case SemioticClass::RANGE:    return "RANGE";
         case SemioticClass::PLAIN:    break;
     }
     return "PLAIN";
@@ -37,11 +45,16 @@ const std::vector<Grammar>& grammars() {
         {SemioticClass::MONEY,    &money_grammar(),    kMoneyEntry},
         {SemioticClass::DATE,     &date_grammar(),     kDateEntry},
         {SemioticClass::TIME,     &time_grammar(),     kTimeEntry},
+        {SemioticClass::DECADE,   &decade_grammar(),   kDecadeEntry},
         {SemioticClass::MEASURE,  &measure_grammar(),  kMeasureEntry},
         {SemioticClass::DECIMAL,  &decimal_grammar(),  kDecimalEntry},
         {SemioticClass::FRACTION, &fraction_grammar(), kFractionEntry},
         {SemioticClass::ORDINAL,  &ordinal_grammar(),  kOrdinalEntry},
         {SemioticClass::CARDINAL, &cardinal_grammar(), kCardinalEntry},
+        // One-directional; see the note on Grammar::speaking_only.
+        {SemioticClass::LETTERS,  &letters_grammar(),  kLettersEntry, true},
+        {SemioticClass::ABBREV,   &abbreviation_grammar(), kAbbreviationEntry, true},
+        {SemioticClass::RANGE,    &range_grammar(),    kRangeEntry, true},
     };
     return registry;
 }
@@ -156,6 +169,10 @@ std::vector<Segment> classify(const std::string& input,
             SpanReadings entry;
             entry.reserve(grammars().size());
             for (const Grammar& grammar : grammars()) {
+                if (dir == Direction::ITN && grammar.speaking_only) {
+                    entry.emplace_back();
+                    continue;
+                }
                 std::vector<Path> paths =
                     dir == Direction::TTS ? grammar.grammar->apply_prefixes(span.labels)
                                           : grammar.grammar->apply_prefixes_inverse(span.labels);

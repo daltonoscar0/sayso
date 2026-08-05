@@ -68,6 +68,12 @@ Wfst year_reading(int first_century, int last_century, bool with_cardinal_fallba
 constexpr int kBareYearFirstCentury = 11;
 constexpr int kBareYearLastCentury = 20;
 
+// Everything a bare numeric span may be: a signed cardinal, a year, or a Roman
+// numeral — the body of cardinal_grammar() before hyphenation. Exposed for the
+// range grammar, whose operands are bare numbers by definition, so that
+// "1729-1811" gets the year reading its two halves would get alone.
+const Wfst& bare_number_fst();
+
 // "zero" .. "nine", for grammars that read digits one at a time (the
 // fractional part of "$2.5 million", say).
 const char* digit_word(int d);

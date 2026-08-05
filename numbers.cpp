@@ -261,6 +261,35 @@ Wfst build_hyphenator(const std::vector<std::string>& vocabulary) {
     return f;
 }
 
+// Roman numerals, as a table and never as a parser.
+//
+// A parser over M{0,4}(CM|CD|D?C{0,3})... accepts "MIX", "DID", "CIVIC" and
+// every other word made of those seven letters, and spans arrive case-folded,
+// so there is no capital left to tell a numeral from a word. A table chooses
+// exactly which strings are numerals, and this one omits every single letter:
+// I, V, X, L, C, D and M are 16,855 occurrences in the shard of which 5.7% are
+// numerals, and "I" alone is almost all of the rest.
+//
+// The reading is cardinal because that is what the reference does three times
+// in four. "Henry VIII" is "the eighth" and "World War II" is "two", and the
+// only thing that separates them is the preceding word, which CLASSIFY does
+// not see.
+const char* kRomanNumerals[] = {
+    "ii", "iii", "iv", "vi", "vii", "viii", "ix", "xi", "xii", "xiii",
+    "xiv", "xv", "xvi", "xvii", "xviii", "xix", "xx", "xxi", "xxii", "xxiii",
+    "xxiv", "xxv", "xxvi", "xxvii", "xxviii", "xxix", "xxx",
+};
+const int kRomanValues[] = {2,  3,  4,  6,  7,  8,  9,  11, 12, 13, 14, 15, 16, 17,
+                            18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30};
+
+Wfst roman_numerals() {
+    std::vector<Wfst> parts;
+    size_t count = sizeof(kRomanNumerals) / sizeof(kRomanNumerals[0]);
+    for (size_t i = 0; i < count; ++i)
+        parts.push_back(rule(kRomanNumerals[i], cardinal_words(kRomanValues[i])));
+    return union_of(parts);
+}
+
 // Every distinct word `f` can write.
 std::vector<std::string> output_vocabulary(const Wfst& f) {
     std::vector<std::string> words;
@@ -366,7 +395,7 @@ Wfst hyphenated(const Wfst& f) {
     return connect(compose(f, build_hyphenator(output_vocabulary(f))));
 }
 
-const Cascade& cardinal_grammar() {
+const Wfst& bare_number_fst() {
     // The sign is concatenated onto the number rather than distributed over
     // three copies of it: A·B ∪ A·C is A·(B ∪ C), and B here is the whole
     // cardinal machine.
@@ -379,11 +408,22 @@ const Cascade& cardinal_grammar() {
     // the margin on the general branch rather than by excluding anything. A
     // signed number is never a year, so the year branch stands outside the
     // sign.
+    //
+    // A Roman numeral is a written-side spelling of a small integer, so it
+    // belongs here rather than in a class of its own — and being here is what
+    // makes it safe in both directions. ITN's spoken "two" faces "2" at the
+    // margin and "II" at this penalty, so the digits win; a separate class
+    // would have had to beat PLAIN instead, and could not.
     static const Wfst body = union_of({
         reweight(concat_of({sign, cardinal_core_fst()}), kBareYearMargin),
         year_reading(kBareYearFirstCentury, kBareYearLastCentury, false),
+        reweight(roman_numerals(), kRomanNumeralPenalty),
     });
-    static const Wfst joined = hyphenated(body);
+    return body;
+}
+
+const Cascade& cardinal_grammar() {
+    static const Wfst joined = hyphenated(bare_number_fst());
     static const Cascade grammar = Cascade().then(joined);
     return grammar;
 }

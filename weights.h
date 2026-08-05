@@ -92,7 +92,11 @@ constexpr float kZeroPadPenalty = 0.3f;
 // have to beat the canonical format's zero, and a large penalty would make a
 // date span look expensive to the classifier, which would rather read
 // "2015-03-14" as three cardinals separated by minus signs.
-constexpr float kIsoFormatPenalty = 0.5f;
+//
+// The ISO one came down from 0.5 when RANGE arrived, so that a date is a
+// cheaper reading of "2011-11-11" by a wider margin. The structural guard in
+// ranges.cpp is what actually protects the date; this only widens the gap.
+constexpr float kIsoFormatPenalty = 0.3f;
 constexpr float kMonthNameFormatPenalty = 0.6f;
 constexpr float kDayFirstFormatPenalty = 0.7f;
 
@@ -132,6 +136,30 @@ constexpr float kMissingDateCommaPenalty = 0.3f;
 
 // A day spoken as a cardinal ("march fourteen") rather than an ordinal.
 constexpr float kCardinalDayPenalty = 0.8f;
+
+// ---- inside the abbreviation and letter grammars -----------------------------
+
+// The full stop an abbreviation may carry: "vol." for "vol". Scalpel usually
+// splits it off as its own token, so this is belt and braces.
+constexpr float kAbbreviationDotPenalty = 0.2f;
+
+// A dotted acronym whose last letter has lost its stop: "U.S" for "U.S.". The
+// path must still contain one stop, which is what keeps a bare "a" out.
+constexpr float kUndottedFinalLetterPenalty = 0.3f;
+
+// A small integer written as a Roman numeral. Read, never written: ITN's
+// spoken "two" meets "2" at kBareYearMargin and "II" at this, so the digits
+// win. That is the whole reason Roman numerals live inside the cardinal
+// grammar rather than in a class of their own.
+constexpr float kRomanNumeralPenalty = 0.5f;
+
+// ---- inside the range grammar ------------------------------------------------
+
+// ---- inside the decade grammar ----------------------------------------------
+
+// The apostrophe of "'70s", which marks the elided century. Read but not
+// written: "70s" is the plainer form and the one ITN settles on.
+constexpr float kElidedCenturyPenalty = 0.2f;
 
 // ---- inside the decimal grammar ---------------------------------------------
 //
@@ -245,6 +273,32 @@ constexpr float kPlainPerChar = 1.0f;
 constexpr float kMoneyEntry = 0.05f;
 constexpr float kDateEntry = 0.05f;
 constexpr float kTimeEntry = 0.05f;
+constexpr float kDecadeEntry = 0.05f;
+constexpr float kAbbreviationEntry = 0.05f;
+constexpr float kLettersEntry = 0.05f;
+// Much dearer than the classes it overlaps, and the one entry cost here that
+// is derived rather than chosen. A range's shape — number, separator, number —
+// is the *prefix* of an ISO date, so RANGE plus a trailing cardinal has to
+// lose to DATE over the same characters:
+//
+//   DATE("2011-11-11")                 = kDateEntry + kIsoFormatPenalty = 0.35
+//   RANGE("2011-11") + CARDINAL("-11") = kRangeEntry + 0.21
+//
+// so kRangeEntry must exceed 0.14. It is also bounded above, because an
+// unspaced range must outbid the reading where the second operand is a
+// negative number:
+//
+//   CARDINAL("1") + CARDINAL("-10")    = 0.42
+//
+// leaving a window of (0.14, 0.42). Both bounds were found the hard way:
+// "2011-11-11" read as "twenty eleven to eleven minus eleven" until the lower
+// one was respected, and "1-10" as "one minus ten" until the upper one was.
+// Zero-padding had hidden the first — "2015-03-14" was only ever safe because
+// reading "03" costs the cardinal grammar a digit-by-digit fallback.
+//
+// A genuine spaced range wins on a different margin entirely: leaving "5 - 0"
+// alone costs PLAIN 1.4.
+constexpr float kRangeEntry = 0.25f;
 constexpr float kMeasureEntry = 0.05f;
 constexpr float kDecimalEntry = 0.05f;
 constexpr float kFractionEntry = 0.1f;

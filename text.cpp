@@ -23,6 +23,32 @@ void recover_gap(const std::string& input, size_t from, size_t to,
     }
 }
 
+// Scalpel attaches a trailing full stop to a short token, on the reasonable
+// guess that it is an abbreviation: "1980s." comes back as [1980] [s.], and
+// "5 km." as [5] [km.]. A span is replaced whole, so any class claiming such a
+// token would swallow the sentence's full stop with it — and none of them can
+// claim it at all, because "1980s." is not a decade and "km." is not a unit.
+// Both were silently failing wherever they ended a sentence.
+//
+// A token that already contains a full stop is left alone, which is exactly
+// the set that wanted the guess: "U.S.", "e.g." and "p.m." keep their dots and
+// stay one token.
+void split_trailing_stop(std::vector<Token>& out, const Token& t, size_t start) {
+    const std::string& text = t.text;
+    size_t end = start + text.size();
+    bool splittable = text.size() >= 2 && text.back() == '.' &&
+                      text.find('.') == text.size() - 1;
+    if (!splittable) {
+        out.push_back(Token(text, t.type, static_cast<int>(start),
+                            static_cast<int>(end)));
+        return;
+    }
+    out.push_back(Token(text.substr(0, text.size() - 1), t.type,
+                        static_cast<int>(start), static_cast<int>(end - 1)));
+    out.push_back(Token(".", TokenType::PUNCT, static_cast<int>(end - 1),
+                        static_cast<int>(end)));
+}
+
 }  // namespace
 
 std::vector<Token> tokenize(const std::string& input) {
@@ -38,8 +64,7 @@ std::vector<Token> tokenize(const std::string& input) {
             continue;  // defensive: an offset we cannot trust is not usable
         if (start > cursor) recover_gap(input, cursor, start, out);
         size_t end = start + t.text.size();
-        out.push_back(Token(t.text, t.type, static_cast<int>(start),
-                            static_cast<int>(end)));
+        split_trailing_stop(out, t, start);
         cursor = end;
     }
     if (cursor < input.size()) recover_gap(input, cursor, input.size(), out);
