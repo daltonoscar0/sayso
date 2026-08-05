@@ -45,6 +45,46 @@ const NumberParts& number_parts();
 const Wfst& cardinal_core_fst();      // includes "0" -> "zero"
 const Wfst& cardinal_positive_fst();  // excludes it, so "$0.99" is cents-only
 
+// How English says a four-digit number as a year: the digits are paired, so
+// 1984 is "nineteen eighty-four", 1905 is "nineteen oh five" and 1900 is
+// "nineteen hundred" — except across 2000-2009, where the cardinal reading
+// wins and 2005 is "two thousand five". The weights choose; both readings are
+// in the machine.
+//
+// This lives here rather than in dates.cpp because two callers need it and a
+// second copy would drift: the date grammar's year field, and the cardinal
+// grammar, which offers the same reading for a bare four-digit span.
+//
+// `first_century` and `last_century` bound the leading pair — 19 to 20 is
+// 1900 to 2099 — and the bound is a size decision, since each century is a
+// distinct path. `with_cardinal_fallback` adds the plain cardinal reading at
+// kCardinalYearPenalty; a caller that already has one of its own says false.
+// The result is unhyphenated, so the caller's own pass joins the compounds.
+Wfst year_reading(int first_century, int last_century, bool with_cardinal_fallback);
+
+// The century range the *cardinal* grammar offers a year reading over: 1100 to
+// 2099. Narrower than what a date accepts, because a bare number is far more
+// likely to be a quantity than a date's year field is.
+constexpr int kBareYearFirstCentury = 11;
+constexpr int kBareYearLastCentury = 20;
+
+// Everything a bare numeric span may be: a signed cardinal, a year, or a Roman
+// numeral — the body of cardinal_grammar() before hyphenation. Exposed for the
+// range grammar, whose operands are bare numbers by definition, so that
+// "1729-1811" gets the year reading its two halves would get alone.
+const Wfst& bare_number_fst();
+
+// An optional leading sign: nothing, "minus", or "negative" at a cost.
+//
+// One machine rather than one per grammar. Every numeric class needs it and
+// each had grown its own copy, which is how MEASURE came to be the only one
+// without: "-56 kg" left the hyphen to PLAIN, which glued it to the first
+// spoken word as "-fifty-six kilograms".
+//
+// Concatenate it; do not distribute it. A·(B ∪ C) is A·B ∪ A·C with one copy
+// of A instead of two, and A here is a whole number grammar.
+const Wfst& optional_sign_fst();
+
 // "zero" .. "nine", for grammars that read digits one at a time (the
 // fractional part of "$2.5 million", say).
 const char* digit_word(int d);

@@ -37,6 +37,15 @@ const OrdinalPair kOrdinals[] = {
 };
 
 std::string digit(int d) { return std::string(1, static_cast<char>('0' + d)); }
+std::string two_digits(int n) { return digit(n / 10) + digit(n % 10); }
+
+// Left unhyphenated; the hyphenator stage joins "eighty" to "four".
+std::vector<std::string> cardinal_words(int n) {
+    if (n < 10) return {kUnits[n]};
+    if (n < 20) return {kTeens[n - 10]};
+    if (n % 10 == 0) return {kTens[n / 10]};
+    return {kTens[n / 10], kUnits[n % 10]};
+}
 
 // An optional thousands comma. Reading "1,234" costs a little; writing one
 // costs the same, which is why ITN settles on the unseparated "1234".
@@ -252,6 +261,40 @@ Wfst build_hyphenator(const std::vector<std::string>& vocabulary) {
     return f;
 }
 
+// Roman numerals, as a table and never as a parser.
+//
+// A parser over M{0,4}(CM|CD|D?C{0,3})... accepts "MIX", "DID", "CIVIC" and
+// every other word made of those seven letters, and spans arrive case-folded,
+// so there is no capital left to tell a numeral from a word. A table chooses
+// exactly which strings are numerals, and this one omits every single letter:
+// I, V, X, L, C, D and M are 16,855 occurrences in the shard of which 5.7% are
+// numerals, and "I" alone is almost all of the rest.
+//
+// The reading is cardinal because that is what the reference does three times
+// in four. "Henry VIII" is "the eighth" and "World War II" is "two", and the
+// only thing that separates them is the preceding word, which CLASSIFY does
+// not see.
+// "xi", "vi" and "ix" are omitted along with the single letters. Folded, they
+// are the surname Xi, the Roman numeral's own two-letter neighbours in cricket
+// team names ("Second XI"), and a chapter abbreviation; between them they are
+// 289 of the 479 tokens in the shard that this table matches and the reference
+// leaves alone.
+const char* kRomanNumerals[] = {
+    "ii", "iii", "iv", "vii", "viii", "xii", "xiii",
+    "xiv", "xv", "xvi", "xvii", "xviii", "xix", "xx", "xxi", "xxii", "xxiii",
+    "xxiv", "xxv", "xxvi", "xxvii", "xxviii", "xxix", "xxx",
+};
+const int kRomanValues[] = {2,  3,  4,  7,  8,  12, 13, 14, 15, 16, 17,
+                            18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30};
+
+Wfst roman_numerals() {
+    std::vector<Wfst> parts;
+    size_t count = sizeof(kRomanNumerals) / sizeof(kRomanNumerals[0]);
+    for (size_t i = 0; i < count; ++i)
+        parts.push_back(rule(kRomanNumerals[i], cardinal_words(kRomanValues[i])));
+    return union_of(parts);
+}
+
 // Every distinct word `f` can write.
 std::vector<std::string> output_vocabulary(const Wfst& f) {
     std::vector<std::string> words;
@@ -319,6 +362,39 @@ const NumberParts& number_parts() {
     return parts;
 }
 
+Wfst year_reading(int first_century, int last_century, bool with_cardinal_fallback) {
+    const NumberParts& p = number_parts();
+    std::vector<Wfst> years;
+    for (int century = first_century; century <= last_century; ++century) {
+        Wfst lead = rule(two_digits(century), cardinal_words(century));
+        // 2000 and 2005 are "two thousand" and "two thousand five", not
+        // "twenty hundred" and "twenty oh five"; every other century pairs.
+        // The bare two-digit tail is never penalised, which is what leaves
+        // 2015 as "twenty fifteen".
+        float paired_cost = century == 20 ? kTwoThousandsPenalty : 0.0f;
+        Wfst tail = union_of({
+            rule("00", {"hundred"}, paired_cost),
+            reweight(concat_of({rule("0", {"oh"}), p.unit_nz}), paired_cost),
+            p.two_digit_nz,
+        });
+        years.push_back(concat_of({lead, tail}));
+    }
+    if (with_cardinal_fallback) {
+        // Across 2000-2009 the cardinal reading is not a fallback, it is the
+        // ordinary one — "two thousand seven" — so it costs nothing. Charging
+        // it kCardinalYearPenalty made every date carrying such a year 0.6
+        // dearer, and "2007-10-19" lost to three cardinals and two minus
+        // signs while "2015-10-19" stayed a date.
+        years.push_back(concat_of({rule("2", {"two"}), words_out({"thousand"}),
+                                   union_of({chars_in("000"),
+                                             concat_of({chars_in("00"), p.unit_nz})})}));
+        years.push_back(reweight(
+            concat_of({p.unit_nz, words_out({"thousand"}), p.padded3}),
+            kCardinalYearPenalty));
+    }
+    return union_of(years);
+}
+
 const Wfst& cardinal_core_fst() {
     static const Wfst f = build_cardinal_core(true);
     return f;
@@ -333,13 +409,36 @@ Wfst hyphenated(const Wfst& f) {
     return connect(compose(f, build_hyphenator(output_vocabulary(f))));
 }
 
-const Cascade& cardinal_grammar() {
-    static const Wfst signed_number = union_of({
-        cardinal_core_fst(),
-        concat_of({rule("-", {"minus"}), cardinal_core_fst()}),
-        concat_of({rule("-", {"negative"}, kAltSignPenalty), cardinal_core_fst()}),
+const Wfst& optional_sign_fst() {
+    static const Wfst sign = union_of({
+        empty_string_fst(),
+        rule("-", {"minus"}),
+        rule("-", {"negative"}, kAltSignPenalty),
     });
-    static const Wfst joined = hyphenated(signed_number);
+    return sign;
+}
+
+const Wfst& bare_number_fst() {
+    // A bare four-digit number in the year range gets the paired reading, by
+    // the margin on the general branch rather than by excluding anything. A
+    // signed number is never a year, so the year branch stands outside the
+    // sign.
+    //
+    // A Roman numeral is a written-side spelling of a small integer, so it
+    // belongs here rather than in a class of its own — and being here is what
+    // makes it safe in both directions. ITN's spoken "two" faces "2" at the
+    // margin and "II" at this penalty, so the digits win; a separate class
+    // would have had to beat PLAIN instead, and could not.
+    static const Wfst body = union_of({
+        reweight(concat_of({optional_sign_fst(), cardinal_core_fst()}), kBareYearMargin),
+        year_reading(kBareYearFirstCentury, kBareYearLastCentury, false),
+        reweight(roman_numerals(), kRomanNumeralPenalty),
+    });
+    return body;
+}
+
+const Cascade& cardinal_grammar() {
+    static const Wfst joined = hyphenated(bare_number_fst());
     static const Cascade grammar = Cascade().then(joined);
     return grammar;
 }

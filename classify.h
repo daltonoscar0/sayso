@@ -17,11 +17,14 @@
 #include <vector>
 
 #include "../Scalpel/token.h"
+#include "dates.h"
 #include "wfst.h"
 
 namespace sayso {
 
-enum class SemioticClass { PLAIN, CARDINAL, ORDINAL, MONEY, DATE };
+enum class SemioticClass {
+    PLAIN, CARDINAL, ORDINAL, DECIMAL, FRACTION, MONEY, MEASURE, DATE, TIME, DECADE, ABBREV, LETTERS, RANGE, TELEPHONE
+};
 const char* class_name(SemioticClass c);
 
 enum class Direction { TTS, ITN };
@@ -37,15 +40,42 @@ struct Segment {
 
 // A class grammar, always oriented written->spoken; classify() applies the
 // cascade in reverse when asked for ITN.
+//
+// `speaking_only` marks the classes that must not be read backwards. This is
+// not a second grammar and not a weakening of the one-grammar rule — the
+// machine is still written once and still inverted for everything else. It
+// records that a *class* is one-directional: expanding "St" to "saint" is
+// normalisation, contracting "saint" to "St" is not, and no weight can express
+// that difference here. PLAIN is priced per character, so a five-letter word
+// costs 5.0 against a class entry cost of 0.05; a lexical class can always
+// outbid leaving the word alone, whichever way it is pointing.
+//
+// Only classes whose written side is drawn from ordinary English need it.
+// Every numeric class stays bidirectional, because there a plain numeral is
+// already the cheaper written form and the weights settle it.
 struct Grammar {
     SemioticClass type;
     const Cascade* grammar;
     float entry_cost;
+    bool speaking_only = false;
+    // Whether this grammar wants the span with its case intact.
+    //
+    // CLASSIFY folds case before a grammar sees a span, because the spoken
+    // side is lowercase by construction and almost every written form Sayso
+    // produces has no letters in it. LETTERS is the exception: "US" is an
+    // acronym and "us" is a pronoun, and nothing but the capital tells them
+    // apart. It is one flag rather than a second pipeline — the same span,
+    // interned twice.
+    bool wants_case = false;
 };
-const std::vector<Grammar>& grammars();
+// The registry depends on the date option, which selects one of two date
+// cascades. Everything else in it is shared.
+const std::vector<Grammar>& grammars(
+    DateSpeech speech = DateSpeech::Canonical);
 
 std::vector<Segment> classify(const std::string& input,
-                              const std::vector<Token>& tokens, Direction dir);
+                              const std::vector<Token>& tokens, Direction dir,
+                              DateSpeech speech = DateSpeech::Canonical);
 
 // Longest span, in tokens, a class may claim. The two directions differ by a
 // lot. The longest written span is "$1,234,567.89" at eight tokens. The
@@ -57,7 +87,7 @@ std::vector<Segment> classify(const std::string& input,
 // Both caps are affordable because CLASSIFY runs each grammar once per span
 // *start* rather than once per span (see Cascade::apply_prefixes), so cost
 // grows with the longest span a grammar can actually match, not with the cap.
-constexpr size_t kMaxWrittenSpanTokens = 8;
+constexpr size_t kMaxWrittenSpanTokens = 10;
 constexpr size_t kMaxSpokenSpanTokens = 24;
 inline size_t max_span_tokens(Direction dir) {
     return dir == Direction::TTS ? kMaxWrittenSpanTokens : kMaxSpokenSpanTokens;

@@ -80,15 +80,44 @@ static void money_tests() {
                 true),
           "currency amounts round trip in both directions");
 
+    // A magnitude survives the round trip only where plain digits could not
+    // say the same words: "two point five million" has no numeral spelling.
     check(table(money_grammar(),
                 {
                     {"$2.5 million", "two point five million dollars"},
                     {"$1.75 billion", "one point seven five billion dollars"},
-                    {"$3 million", "three million dollars"},
-                    {"€250 thousand", "two hundred fifty thousand euros"},
                 },
                 true),
           "magnitudes: $2.5 million");
+
+    // Where digits do say the same words, digits are what ITN writes — the
+    // same canonicalisation that drops the thousands comma. Both written forms
+    // are still read.
+    check(tts(money_grammar(), "$3 million") == "three million dollars" &&
+              tts(money_grammar(), "€250 thousand") == "two hundred fifty thousand euros" &&
+              itn(money_grammar(), "three million dollars") == "$3000000" &&
+              itn(money_grammar(), "two hundred fifty thousand euros") == "€250000",
+          "a magnitude word is read, but digits are written where they suffice");
+
+    // Newspaper suffixes, which arrive case-folded: "$3B" is "$3b" by the time
+    // the grammar sees it.
+    check(table(money_grammar(),
+                {
+                    {"$6.5m", "six point five million dollars"},
+                    {"£20m", "twenty million pounds"},
+                    {"$26.6bn", "twenty-six point six billion dollars"},
+                    {"$3b", "three billion dollars"},
+                    {"$50k", "fifty thousand dollars"},
+                },
+                false),
+          "letter magnitude suffixes are read");
+
+    check(itn(money_grammar(), "six point five million dollars") == "$6.5 million",
+          "a suffix is read, the spelled magnitude is written");
+
+    check(tts(money_grammar(), "$ 1") == "one dollar" &&
+              itn(money_grammar(), "one dollar") == "$1",
+          "a space after the symbol is read, never written");
 
     check(tts(money_grammar(), "$1,234") ==
               "one thousand two hundred thirty-four dollars" &&
@@ -289,10 +318,48 @@ static void property_tests() {
               (witness.empty() ? "" : " [" + witness + "]"));
 }
 
+// ---- the spoken-order option ------------------------------------------------
+
+static void date_order_tests() {
+    // The default is unchanged: every written format reaches one spoken form,
+    // which is what lets ITN canonicalise.
+    const char* forms[] = {"3/14/2015", "2015-03-14", "march 14, 2015", "14 march 2015"};
+    bool one_form = true;
+    for (const char* f : forms)
+        if (tts(date_grammar(), f) != "march fourteenth twenty fifteen") one_form = false;
+    check(one_form, "canonical order: four written formats, one spoken form");
+
+    // Preserving the written order is what the Google TN reference does, and
+    // it is 84% of everything Sayso otherwise disagrees with. A date written
+    // day first is spoken day first — an ISO date included, which is not
+    // obvious until you read the data.
+    const Cascade& preserve = date_grammar(DateSpeech::PreserveWrittenOrder);
+    check(tts(preserve, "14 march 2015") == "the fourteenth of march twenty fifteen" &&
+              tts(preserve, "2015-03-14") == "the fourteenth of march twenty fifteen",
+          "preserved order: a day-first date is spoken day first");
+
+    check(tts(preserve, "3/14/2015") == "march fourteenth twenty fifteen" &&
+              tts(preserve, "march 14, 2015") == "march fourteenth twenty fifteen",
+          "and a month-first one is not");
+
+    // Both spoken forms still read back to a written date. Inside the
+    // day-first family ITN settles on the cheapest member, which is the ISO
+    // form — the same canonicalisation by weight as everywhere else.
+    check(itn(preserve, "the fourteenth of march twenty fifteen") == "2015-03-14" &&
+              itn(preserve, "march fourteenth twenty fifteen") == "3/14/2015",
+          "and each spoken form reads back to a written one");
+
+    // The option is the only difference. The marker it turns on never reaches
+    // either tape.
+    check(tts(preserve, "14 march 2015").find('\x01') == std::string::npos,
+          "the orientation marker stays inside the cascade");
+}
+
 int main() {
     money_tests();
     date_tests();
     ambiguity_tests();
+    date_order_tests();
     property_tests();
     std::cout << "\nTests run:" << run << "\nTests failed: " << failed << "\n";
     return failed == 0 ? 0 : 1;

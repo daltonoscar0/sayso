@@ -3,6 +3,8 @@ sayso
 wfst_tests
 number_tests
 money_date_tests
+quantity_tests
+clock_tests
 pipeline_tests
 
 # Object files

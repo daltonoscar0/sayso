@@ -4,12 +4,14 @@
 
 namespace sayso {
 
-std::vector<Segment> analyse(const std::string& input, Direction dir) {
-    return classify(input, tokenize(input), dir);
+std::vector<Segment> analyse(const std::string& input, Direction dir,
+                             DateSpeech speech) {
+    return classify(input, tokenize(input), dir, speech);
 }
 
-std::string normalize(const std::string& input, Direction dir) {
-    std::vector<Segment> segments = analyse(input, dir);
+std::string normalize(const std::string& input, Direction dir,
+                      DateSpeech speech) {
+    std::vector<Segment> segments = analyse(input, dir, speech);
     if (segments.empty()) return input;
 
     std::string out;

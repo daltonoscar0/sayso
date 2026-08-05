@@ -28,6 +28,19 @@ const Currency kCurrencies[] = {
 // tapes, so "$2.5 million" speaks as "two point five million dollars".
 const char* kMagnitudes[] = {"thousand", "million", "billion", "trillion"};
 
+// The same magnitudes written as a letter suffix, which is how a newspaper
+// writes them: "£20m", "$26.6bn", "$50k". Spans are case-folded before a
+// grammar sees them, so only the lowercase spellings belong here — "$3B"
+// arrives as "$3b".
+struct MagnitudeSuffix {
+    const char* written;
+    const char* spoken;
+};
+const MagnitudeSuffix kMagnitudeSuffixes[] = {
+    {"k", "thousand"}, {"m", "million"}, {"bn", "billion"}, {"b", "billion"},
+    {"tn", "trillion"},
+};
+
 // One-digit cents: "$2.5" is two dollars fifty, not two dollars five.
 const char* kTensWords[10] = {"", "ten", "twenty", "thirty", "forty",
                               "fifty", "sixty", "seventy", "eighty", "ninety"};
@@ -67,29 +80,42 @@ Wfst build_money() {
     for (size_t index = 0; index < sizeof(kCurrencies) / sizeof(kCurrencies[0]); ++index) {
         const Currency& c = kCurrencies[index];
         float currency_cost = index == 0 ? 0.0f : kNonDefaultCurrencyPenalty;
-        Wfst symbol = chars_in(c.symbol, currency_cost);
+        // "$ 1" is written often enough to read and never worth producing.
+        Wfst symbol = concat_of({
+            chars_in(c.symbol, currency_cost),
+            union_of({empty_string_fst(), chars_in(" ", kCurrencySpacePenalty)}),
+        });
         Wfst major = amount_with_unit(c.major_singular, c.major_plural, amount);
         Wfst minor = union_of({
             concat_of({chars_in("0"), rule("1", {"one"}), words_out({c.minor_singular})}),
             concat_of({cents, words_out({c.minor_plural}, kPluralPreferenceMargin)}),
         });
 
-        // $25 and $25.00
-        branches.push_back(concat_of({symbol, major}));
-        branches.push_back(
-            concat_of({symbol, major, chars_in(".00", kExplicitZeroCentsPenalty)}));
-
-        // $25.10
-        branches.push_back(concat_of({symbol, major, chars_in("."), optional_and(), minor}));
-
         // $2.5 -> two dollars and fifty cents, written back as $2.50
         std::vector<Wfst> short_cents;
         for (int d = 1; d <= 9; ++d)
             short_cents.push_back(rule(digit(d), {kTensWords[d]}));
-        branches.push_back(reweight(
-            concat_of({symbol, major, chars_in("."), optional_and(),
-                       union_of(short_cents), words_out({c.minor_plural})}),
-            kShortCentsPenalty));
+
+        // Everything that may follow a major amount, unioned *before* the
+        // amount is concatenated onto it. Written the other way round — one
+        // branch per tail, each beginning with the amount — every currency
+        // carries four copies of the cardinal machine instead of one, and
+        // composing this grammar against a span is the single largest cost in
+        // the classifier. Path weights are unchanged: the tropical semiring
+        // sums along a path, so a reweight() moved inside a concatenation
+        // lands on the same total.
+        branches.push_back(concat_of({
+            symbol, major,
+            union_of({
+                empty_string_fst(),                            // $25
+                chars_in(".00", kExplicitZeroCentsPenalty),    // $25.00
+                concat_of({chars_in("."), optional_and(), minor}),  // $25.10
+                reweight(concat_of({chars_in("."), optional_and(),
+                                    union_of(short_cents),
+                                    words_out({c.minor_plural})}),
+                         kShortCentsPenalty),                  // $2.5
+            }),
+        }));
 
         // $0.99 -> ninety-nine cents, with the spelled-out zero accepted too
         branches.push_back(concat_of({symbol, chars_in("0."), minor}));
@@ -98,19 +124,29 @@ Wfst build_money() {
                        chars_in("."), optional_and(), minor}),
             kZeroDollarsPenalty));
 
-        // $2.5 million
-        Wfst decimal = union_of({
+        // $2.5 million, with the fractional tail factored out the same way
+        Wfst decimal = concat_of({
             amount,
-            concat_of({amount, rule(".", {"point"}),
-                       concat_of({union_of(fraction_digits),
-                                  closure(union_of(fraction_digits))})}),
+            union_of({empty_string_fst(),
+                      concat_of({rule(".", {"point"}), union_of(fraction_digits),
+                                 closure(union_of(fraction_digits))})}),
         });
+        // A magnitude is written either spelled out after a space or as a
+        // letter suffix flush against the amount. Both are read; the spelled
+        // one costs nothing, so that is what ITN writes.
         std::vector<Wfst> magnitudes;
         for (const char* m : kMagnitudes)
-            magnitudes.push_back(transducer(chars_of(m), words_of({m})));
-        branches.push_back(concat_of({symbol, decimal, chars_in(" "),
-                                      union_of(magnitudes),
-                                      words_out({c.major_plural})}));
+            magnitudes.push_back(
+                concat_of({chars_in(" "), transducer(chars_of(m), words_of({m}))}));
+        // A space before the suffix is written too — "$5.4 M" as often as
+        // "$5.4M" — and without it MEASURE claimed the amount as metres.
+        for (const MagnitudeSuffix& s : kMagnitudeSuffixes)
+            magnitudes.push_back(concat_of({
+                union_of({empty_string_fst(), chars_in(" ")}),
+                rule(s.written, {s.spoken}, kLetterMagnitudePenalty)}));
+        branches.push_back(reweight(concat_of({symbol, decimal, union_of(magnitudes),
+                                               words_out({c.major_plural})}),
+                                    kSpelledMagnitudePenalty));
     }
     return connect(union_of(branches));
 }

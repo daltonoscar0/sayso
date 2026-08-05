@@ -158,7 +158,12 @@ Example make_cardinal(prop::Rng& rng) {
     for (int i = 0; i < digits; ++i) hi *= 10;
     long long n = rng.in_range(0, hi - 1);
     if (rng.in_range(0, 9) == 0) n = -n;
-    return {"CARDINAL", std::to_string(n), cardinal(n), std::to_string(n)};
+    // A bare four-digit number in the year range is read the way a year is
+    // read, so the reference has to say so too. A signed one is not: nothing
+    // writes a negative year.
+    std::string spoken = (n >= 1100 && n <= 2099) ? year_words(static_cast<int>(n))
+                                                  : cardinal(n);
+    return {"CARDINAL", std::to_string(n), spoken, std::to_string(n)};
 }
 
 Example make_ordinal(prop::Rng& rng) {
@@ -216,11 +221,117 @@ Example make_date(prop::Rng& rng) {
     return {"DATE", written, spoken, canonical};
 }
 
+// The tail of a decimal is spoken digit by digit, so the reference builds it
+// that way rather than reaching for cardinal().
+Example make_decimal(prop::Rng& rng) {
+    long long whole = rng.in_range(0, 99999);
+    int places = static_cast<int>(rng.in_range(1, 3));
+    std::string tail, spoken_tail;
+    for (int i = 0; i < places; ++i) {
+        int d = static_cast<int>(rng.in_range(0, 9));
+        tail += static_cast<char>('0' + d);
+        spoken_tail += std::string(" ") + kUnits[d];
+    }
+    std::string written = std::to_string(whole) + "." + tail;
+    return {"DECIMAL", written, cardinal(whole) + " point" + spoken_tail, written};
+}
+
+Example make_fraction(prop::Rng& rng) {
+    struct Denominator { int value; const char* singular; const char* plural; };
+    static const Denominator kDenominators[] = {
+        {2, "half", "halves"},          {3, "third", "thirds"},
+        {4, "quarter", "quarters"},     {5, "fifth", "fifths"},
+        {8, "eighth", "eighths"},       {10, "tenth", "tenths"},
+        {16, "sixteenth", "sixteenths"},{100, "hundredth", "hundredths"},
+    };
+    const Denominator& d = kDenominators[rng.pick(8)];
+    long long numerator = rng.in_range(1, 99);
+    bool mixed = rng.in_range(0, 3) == 0;
+
+    // Standing alone the numerator is "one"; after a whole number it is "a".
+    std::string part = numerator == 1
+                           ? std::string(mixed ? "a " : "one ") + d.singular
+                           : cardinal(numerator) + " " + d.plural;
+    std::string body = std::to_string(numerator) + "/" + std::to_string(d.value);
+    if (!mixed) return {"FRACTION", body, part, body};
+
+    long long whole = rng.in_range(1, 99);
+    std::string written = std::to_string(whole) + " " + body;
+    return {"FRACTION", written, cardinal(whole) + " and " + part, written};
+}
+
+Example make_time(prop::Rng& rng) {
+    int hour = static_cast<int>(rng.in_range(1, 12));
+    int minute = static_cast<int>(rng.in_range(0, 59));
+    bool meridiem = rng.in_range(0, 1) == 1;
+
+    std::string written = std::to_string(hour) + ":" + two_digits(minute);
+    std::string spoken = cardinal(hour);
+    if (minute == 0) {
+        // A round hour is "o'clock" alone, and simply unsaid before a meridiem.
+        if (!meridiem) spoken += " o'clock";
+    } else if (minute < 10) {
+        spoken += std::string(" oh ") + kUnits[minute];
+    } else {
+        spoken += " " + under_thousand(minute);
+    }
+    if (meridiem) {
+        written += " pm";
+        spoken += " p m";
+    }
+    return {"TIME", written, spoken, written};
+}
+
+Example make_measure(prop::Rng& rng) {
+    struct Unit { const char* written; const char* singular; const char* plural;
+                  bool spaced; };
+    static const Unit kUnitTable[] = {
+        {"km", "kilometer", "kilometers", true},
+        {"kg", "kilogram", "kilograms", true},
+        {"cm", "centimeter", "centimeters", true},
+        {"mi", "mile", "miles", true},
+        {"ft", "foot", "feet", true},
+        {"MB", "megabyte", "megabytes", true},
+        {"%", "percent", "percent", false},
+        {"\xc2\xb0" "C", "degree celsius", "degrees celsius", false},
+    };
+    const Unit& u = kUnitTable[rng.pick(8)];
+    long long amount = rng.in_range(1, 9999);
+    std::string written =
+        std::to_string(amount) + (u.spaced ? " " : "") + u.written;
+    std::string spoken =
+        cardinal(amount) + " " + (amount == 1 ? u.singular : u.plural);
+    return {"MEASURE", written, spoken, written};
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string path = argc > 1 ? argv[1] : "data/google_tn_slice.tsv";
-    int count = argc > 2 ? std::atoi(argv[2]) : 500;
+    std::string path = "data/google_tn_slice.tsv";
+    int count = 500;
+    bool force = false;
+    std::vector<std::string> positional;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--force") force = true;
+        else positional.push_back(arg);
+    }
+    if (!positional.empty()) path = positional[0];
+    if (positional.size() > 1) count = std::atoi(positional[1].c_str());
+
+    // Refuse to clobber. The default path is where the *real* slice goes, and
+    // that one costs a multi-gigabyte download to replace; overwriting it with
+    // synthetic data by running this with no arguments would be a quiet and
+    // expensive mistake.
+    {
+        std::ifstream existing(path);
+        if (existing && !force) {
+            std::cerr << path << " already exists.\n"
+                      << "Pass --force to overwrite it, or give another path:\n"
+                      << "  ./generate_slice data/synthetic_slice.tsv\n";
+            return 1;
+        }
+    }
 
     std::ofstream out(path);
     if (!out) {
@@ -234,11 +345,15 @@ int main(int argc, char** argv) {
     prop::Rng rng(20260804);
     for (int i = 0; i < count; ++i) {
         Example e;
-        switch (i % 4) {
+        switch (i % 8) {
             case 0: e = make_cardinal(rng); break;
             case 1: e = make_ordinal(rng); break;
             case 2: e = make_money(rng); break;
-            default: e = make_date(rng); break;
+            case 3: e = make_date(rng); break;
+            case 4: e = make_decimal(rng); break;
+            case 5: e = make_fraction(rng); break;
+            case 6: e = make_time(rng); break;
+            default: e = make_measure(rng); break;
         }
         size_t pattern = rng.pick(sizeof(kCarriers) / sizeof(kCarriers[0]));
         out << e.semiotic_class << "\t" << carry(pattern, e.written) << "\t"

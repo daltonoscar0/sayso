@@ -3,10 +3,19 @@
 #include <unordered_map>
 
 #include "../Scalpel/utf8.h"
+#include "abbrev.h"
 #include "dates.h"
+#include "decades.h"
+#include "decimals.h"
+#include "fractions.h"
+#include "letters.h"
+#include "measures.h"
 #include "money.h"
 #include "numbers.h"
+#include "ranges.h"
+#include "telephone.h"
 #include "text.h"
+#include "times.h"
 #include "weights.h"
 
 namespace sayso {
@@ -15,23 +24,48 @@ const char* class_name(SemioticClass c) {
     switch (c) {
         case SemioticClass::CARDINAL: return "CARDINAL";
         case SemioticClass::ORDINAL:  return "ORDINAL";
+        case SemioticClass::DECIMAL:  return "DECIMAL";
+        case SemioticClass::FRACTION: return "FRACTION";
         case SemioticClass::MONEY:    return "MONEY";
+        case SemioticClass::MEASURE:  return "MEASURE";
         case SemioticClass::DATE:     return "DATE";
+        case SemioticClass::TIME:     return "TIME";
+        case SemioticClass::DECADE:   return "DECADE";
+        case SemioticClass::ABBREV:   return "ABBREV";
+        case SemioticClass::LETTERS:  return "LETTERS";
+        case SemioticClass::RANGE:    return "RANGE";
+        case SemioticClass::TELEPHONE: return "TELEPHONE";
         case SemioticClass::PLAIN:    break;
     }
     return "PLAIN";
 }
 
-const std::vector<Grammar>& grammars() {
+const std::vector<Grammar>& grammars(DateSpeech speech) {
     // Ordered most specific first; the order is cosmetic, the entry costs do
-    // the deciding.
-    static const std::vector<Grammar> registry = {
+    // the deciding. Two registries, differing only in which date cascade they
+    // point at.
+    auto build = [](DateSpeech order) {
+        return std::vector<Grammar>{
         {SemioticClass::MONEY,    &money_grammar(),    kMoneyEntry},
-        {SemioticClass::DATE,     &date_grammar(),     kDateEntry},
+        {SemioticClass::DATE,     &date_grammar(order), kDateEntry},
+        {SemioticClass::TIME,     &time_grammar(),     kTimeEntry},
+        {SemioticClass::DECADE,   &decade_grammar(),   kDecadeEntry},
+        {SemioticClass::MEASURE,  &measure_grammar(),  kMeasureEntry},
+        {SemioticClass::DECIMAL,  &decimal_grammar(),  kDecimalEntry},
+        {SemioticClass::FRACTION, &fraction_grammar(), kFractionEntry},
         {SemioticClass::ORDINAL,  &ordinal_grammar(),  kOrdinalEntry},
         {SemioticClass::CARDINAL, &cardinal_grammar(), kCardinalEntry},
+        // One-directional; see the note on Grammar::speaking_only.
+        {SemioticClass::LETTERS,  &letters_grammar(),  kLettersEntry, true, true},
+        {SemioticClass::ABBREV,   &abbreviation_grammar(), kAbbreviationEntry, true},
+        {SemioticClass::RANGE,    &range_grammar(),    kRangeEntry, true},
+        {SemioticClass::TELEPHONE, &telephone_grammar(), kTelephoneEntry, true},
+        };
     };
-    return registry;
+    static const std::vector<Grammar> canonical = build(DateSpeech::Canonical);
+    static const std::vector<Grammar> preserving =
+        build(DateSpeech::PreserveWrittenOrder);
+    return speech == DateSpeech::Canonical ? canonical : preserving;
 }
 
 namespace {
@@ -48,13 +82,14 @@ struct SpanLabels {
 // collapse to one space); spoken spans are just their words. Both are case
 // folded, since the grammars are written in one case.
 SpanLabels span_labels(const std::string& input, const std::vector<Token>& tokens,
-                       size_t begin, size_t end, Direction dir) {
+                       size_t begin, size_t end, Direction dir, bool fold) {
     SpanLabels out;
     out.boundary.push_back(0);
 
     if (dir == Direction::ITN) {
         for (size_t k = begin; k < end; ++k) {
-            out.labels.push_back(word(fold_case(tokens[k].text)));
+            out.labels.push_back(
+                word(fold ? fold_case(tokens[k].text) : tokens[k].text));
             out.boundary.push_back(out.labels.size());
         }
         return out;
@@ -72,7 +107,7 @@ SpanLabels span_labels(const std::string& input, const std::vector<Token>& token
             if (!in_space) out.labels.push_back(ch(" "));
         } else {
             std::string one;
-            utf8::append(one, utf8::to_lower(cp));
+            utf8::append(one, fold ? utf8::to_lower(cp) : cp);
             out.labels.push_back(ch(one));
         }
         in_space = space;
@@ -97,7 +132,8 @@ struct Candidate {
 }  // namespace
 
 std::vector<Segment> classify(const std::string& input,
-                              const std::vector<Token>& tokens, Direction dir) {
+                              const std::vector<Token>& tokens, Direction dir,
+                              DateSpeech speech) {
     std::vector<Segment> result;
     size_t n = tokens.size();
     if (n == 0) return result;
@@ -105,8 +141,22 @@ std::vector<Segment> classify(const std::string& input,
     // A grammar's readings of every prefix of a span depend only on its
     // class, that span's text and the direction, so they are worth
     // remembering across a document.
+    //
+    // One entry holds every class's answers rather than one entry per class:
+    // the span text is the expensive part of the key, and building it once per
+    // span start instead of once per (span start, class) is most of what the
+    // warm path costs once the grammars themselves are all cache hits.
+    // The map is a function-static and nothing trims it, so a long-lived
+    // process would grow without bound on novel text. The cap is generous —
+    // a real corpus shows its vocabulary of numbers, amounts and dates within
+    // its first few hundred sentences, so the warm path is warm long before
+    // this — and clearing outright rather than evicting one entry keeps the
+    // bookkeeping to a counter.
     using Readings = std::vector<std::pair<float, std::string>>;
-    static std::unordered_map<std::string, Readings> cache;
+    using SpanReadings = std::vector<Readings>;  // indexed as grammars()
+    static std::unordered_map<std::string, SpanReadings> cache;
+    constexpr size_t kMaxCachedSpans = 200000;
+    if (cache.size() > kMaxCachedSpans) cache.clear();
 
     std::vector<Candidate> candidates;
     Wfst lattice;
@@ -126,28 +176,66 @@ std::vector<Segment> classify(const std::string& input,
         // Every span from this start is answered by one run per grammar over
         // the longest of them.
         size_t last = std::min(n, i + max_span_tokens(dir));
-        SpanLabels span = span_labels(input, tokens, i, last, dir);
+        SpanLabels span = span_labels(input, tokens, i, last, dir, true);
         if (span.labels.empty()) continue;
         size_t from = static_cast<size_t>(tokens[i].start_index);
         std::string longest = input.substr(
             from, static_cast<size_t>(tokens[last - 1].end_index) - from);
 
-        for (const Grammar& grammar : grammars()) {
-            std::string key = std::string(1, dir == Direction::TTS ? 't' : 'i') +
-                              class_name(grammar.type) + "\t" + longest;
-            auto hit = cache.find(key);
-            if (hit == cache.end()) {
+        // Only a span with a capital in it needs interning twice. Folding is
+        // per codepoint, so the two label sequences agree on length and on
+        // every token boundary; where the text has no capital they are equal,
+        // and building the second was pure cost on the span-start path — which
+        // is what the cold path actually is, the grammars being answered by
+        // their prefilters.
+        bool has_capital = false;
+        for (char c : longest)
+            if (c >= 'A' && c <= 'Z') { has_capital = true; break; }
+        SpanLabels cased =
+            has_capital ? span_labels(input, tokens, i, last, dir, false) : SpanLabels();
+        const SpanLabels& with_case = has_capital ? cased : span;
+
+        std::string key = std::string(1, dir == Direction::TTS ? 't' : 'i') +
+                          (speech == DateSpeech::Canonical ? 'c' : 'p') + "\t" + longest;
+        auto hit = cache.find(key);
+        if (hit == cache.end()) {
+            SpanReadings entry;
+            entry.reserve(grammars(speech).size());
+            for (const Grammar& grammar : grammars(speech)) {
+                if (dir == Direction::ITN && grammar.speaking_only) {
+                    entry.emplace_back();
+                    continue;
+                }
+                const std::vector<Label>& labels =
+                    grammar.wants_case ? with_case.labels : span.labels;
                 std::vector<Path> paths =
-                    dir == Direction::TTS ? grammar.grammar->apply_prefixes(span.labels)
-                                          : grammar.grammar->apply_prefixes_inverse(span.labels);
+                    dir == Direction::TTS ? grammar.grammar->apply_prefixes(labels)
+                                          : grammar.grammar->apply_prefixes_inverse(labels);
+                // Only up to the last prefix this grammar actually read. The
+                // overwhelming majority of (span, class) pairs match nothing
+                // at all, and storing a full-length vector of misses for each
+                // of them was 99.95% of what the cache held — 4.5 GB over
+                // thirty thousand lines of corpus. A short vector reads the
+                // same, because the lookup below already treats a position
+                // past the end as no candidate.
+                size_t last_found = 0;
+                for (size_t k = 0; k < paths.size(); ++k)
+                    if (paths[k].found) last_found = k + 1;
+
                 Readings readings;
-                readings.reserve(paths.size());
-                for (const Path& p : paths)
-                    readings.emplace_back(p.found ? p.weight : kInfinity,
-                                          p.found ? render(p.olabels) : std::string());
-                hit = cache.emplace(std::move(key), std::move(readings)).first;
+                readings.reserve(last_found);
+                for (size_t k = 0; k < last_found; ++k)
+                    readings.emplace_back(
+                        paths[k].found ? paths[k].weight : kInfinity,
+                        paths[k].found ? render(paths[k].olabels) : std::string());
+                entry.push_back(std::move(readings));
             }
-            const Readings& readings = hit->second;
+            hit = cache.emplace(std::move(key), std::move(entry)).first;
+        }
+
+        for (size_t g = 0; g < grammars(speech).size(); ++g) {
+            const Grammar& grammar = grammars(speech)[g];
+            const Readings& readings = hit->second[g];
 
             for (size_t k = 1; k + i <= last; ++k) {
                 size_t at = span.boundary[k];

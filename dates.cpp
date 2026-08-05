@@ -83,26 +83,11 @@ Wfst day_field() {
 
 // Speech pairs a year's digits — "nineteen ninety-nine", "nineteen hundred",
 // "nineteen oh five" — except in the 2000s, where the cardinal reading wins.
-// Both readings are in the machine; the weights choose.
-Wfst year_field() {
-    const NumberParts& p = number_parts();
-    std::vector<Wfst> years;
-    for (int century = 10; century <= 99; ++century) {
-        Wfst lead = rule(two_digits(century), cardinal_words(century));
-        // 2000 and 2005 are "two thousand" and "two thousand five", not
-        // "twenty hundred" and "twenty oh five"; every other century pairs.
-        float paired_cost = century == 20 ? kTwoThousandsPenalty : 0.0f;
-        Wfst tail = union_of({
-            rule("00", {"hundred"}, paired_cost),
-            reweight(concat_of({rule("0", {"oh"}), p.unit_nz}), paired_cost),
-            p.two_digit_nz,
-        });
-        years.push_back(concat_of({lead, tail}));
-    }
-    years.push_back(reweight(concat_of({p.unit_nz, words_out({"thousand"}), p.padded3}),
-                             kCardinalYearPenalty));
-    return hyphenated(union_of(years));
-}
+// The machine itself lives in numbers.cpp, because the cardinal grammar offers
+// the same reading for a bare four-digit span and a second copy would drift.
+// A date's year field takes the whole range and keeps the cardinal fallback,
+// so "two thousand five" is readable here.
+Wfst year_field() { return hyphenated(year_reading(10, 99, true)); }
 
 // M/D/YYYY -> "march fourteenth twenty fifteen". Every other written format
 // reaches speech through this one machine.
@@ -118,10 +103,29 @@ Wfst canonical_date() {
 // grammar a single statement of how a date is *said*, with the formats as a
 // separate, tiny statement of how one may be *written*.
 
+// The abbreviations a date is written with, each optionally followed by a full
+// stop. "may" is already three letters and has none of its own.
+const char* kMonthAbbreviations[13] = {"",    "jan", "feb", "mar", "apr", "",
+                                       "jun", "jul", "aug", "sep", "oct", "nov",
+                                       "dec"};
+
 Wfst month_name_to_number() {
     std::vector<Wfst> months;
-    for (int m = 1; m <= 12; ++m)
-        months.push_back(transducer(chars_of(kMonths[m]), chars_of(std::to_string(m))));
+    for (int m = 1; m <= 12; ++m) {
+        std::string number = std::to_string(m);
+        months.push_back(transducer(chars_of(kMonths[m]), chars_of(number)));
+
+        // An abbreviation is read but never written: ITN emits M/D/YYYY, so
+        // no month name of any length reaches the written tape from here.
+        std::vector<std::string> short_forms;
+        if (kMonthAbbreviations[m][0]) short_forms.push_back(kMonthAbbreviations[m]);
+        if (m == 9) short_forms.push_back("sept");
+        for (const std::string& form : short_forms)
+            for (const std::string& stop : {std::string(), std::string(".")})
+                months.push_back(reweight(
+                    transducer(chars_of(form + stop), chars_of(number)),
+                    kAbbreviatedMonthPenalty));
+    }
     return union_of(months);
 }
 
@@ -178,22 +182,112 @@ Wfst canonical_format() {
     return closure(union_of(any));
 }
 
+// A one-symbol flag on the intermediate tape, saying "this date was written
+// day first". Only the format stage writes it and only the stage after reads
+// it, so it never reaches either end. Interned whole rather than through
+// chars_of(), which would split it into characters that could occur in text.
+Label order_marker() {
+    static const Label marker = ch("\x01" "day-first");
+    return marker;
+}
+
+Wfst mark_day_first(const Wfst& format) {
+    return concat_of({transducer({}, {order_marker()}), format});
+}
+
+// The two formats that write the day before the month. Kestrel speaks both of
+// them day first — an ISO date included, which is not obvious until you read
+// the data.
 Wfst build_formats() {
     return connect(union_of({
         canonical_format(),
         reweight(month_name_format(), kMonthNameFormatPenalty),
-        reweight(day_first_format(), kDayFirstFormatPenalty),
-        reweight(iso_format(), kIsoFormatPenalty),
+        reweight(mark_day_first(day_first_format()), kDayFirstFormatPenalty),
+        reweight(mark_day_first(iso_format()), kIsoFormatPenalty),
     }));
+}
+
+// ---- orientation ------------------------------------------------------------
+//
+// The stage between format and speech, and the only one the runtime option
+// changes. Under DateSpeech::Canonical it drops the marker, so every written
+// format reaches the one spoken form. Under PreserveWrittenOrder it keeps the
+// marker and swaps the first two fields, so a day-first date stays day first.
+
+Wfst drop_marker() {
+    return concat_of({
+        union_of({empty_string_fst(), transducer({order_marker()}, {})}),
+        canonical_format(),
+    });
+}
+
+// "3/14/2015" -> "14/3/2015", holding the month in the machine's state. Twelve
+// values of a one- or two-character field, which is the cheap side of the
+// reordering — the same reasoning that put the day in day_first_format().
+Wfst swap_month_and_day() {
+    std::vector<Wfst> months;
+    for (int m = 1; m <= 12; ++m) {
+        std::string number = std::to_string(m);
+        for (const std::string& written : {number, two_digits(m)}) {
+            months.push_back(concat_of({
+                chars_in(written), chars_in("/"),
+                copy_digit(), optional_of(copy_digit()),
+                chars_out("/" + number + "/"),
+                chars_in("/"),
+                copy_digit(), copy_digit(), copy_digit(), copy_digit(),
+            }));
+            if (m >= 10) break;  // no zero-padded form to add
+        }
+    }
+    return union_of(months);
+}
+
+Wfst reorient() {
+    return connect(union_of({
+        canonical_format(),
+        concat_of({transducer({order_marker()}, {order_marker()}),
+                   swap_month_and_day()}),
+    }));
+}
+
+// ---- the day-first spoken form ----------------------------------------------
+
+// "the fourteenth of march twenty fifteen", read off "14/3/2015" behind the
+// marker. One copy each of the day, month and year fields, because the swap
+// already happened upstream.
+Wfst day_first_spoken() {
+    return concat_of({
+        transducer({order_marker()}, {}),
+        words_out({"the"}), day_field(), words_out({"of"}),
+        chars_in("/"), month_field(),
+        chars_in("/"), year_field(),
+    });
 }
 
 }  // namespace
 
-const Cascade& date_grammar() {
+const Cascade& date_grammar(DateSpeech speech) {
+    // One format stage and one speaking stage, shared. Only the orientation
+    // between them differs, which is what keeps the option from doubling the
+    // largest grammar in the library.
     static const Wfst formats = build_formats();
-    static const Wfst canonical = connect(canonical_date());
-    static const Cascade grammar = Cascade().then(formats).then(canonical);
-    return grammar;
+    static const Wfst canonical_orientation = connect(drop_marker());
+    static const Wfst preserved_orientation = reorient();
+
+    // Two speaking machines, not one shared. The day-first branch is
+    // unreachable under Canonical — the orientation stage has already dropped
+    // its marker — but a machine does not know that, and composition would
+    // explore it on every span. Each mode carries only what it can reach.
+    static const Wfst month_first_only = connect(canonical_date());
+    static const Wfst either_order =
+        connect(union_of({canonical_date(), day_first_spoken()}));
+
+    static const Cascade canonical_grammar =
+        Cascade().then(formats).then(canonical_orientation).then(month_first_only);
+    static const Cascade preserving_grammar =
+        Cascade().then(formats).then(preserved_orientation).then(either_order);
+
+    return speech == DateSpeech::Canonical ? canonical_grammar : preserving_grammar;
 }
 
 }  // namespace sayso

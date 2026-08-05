@@ -17,7 +17,28 @@ and two throughput numbers.
 
 ## The slice
 
-`sayso_eval` reads `data/google_tn_slice.tsv`, one example per line, `#` for comments:
+`sayso_eval` reads `data/google_tn_slice.tsv` by default, or any path given as an argument, so
+the real and synthetic slices can sit side by side:
+
+```bash
+./sayso_eval                              # whatever is at the default path
+./generate_slice data/synthetic_slice.tsv # write a synthetic one somewhere else
+./sayso_eval data/synthetic_slice.tsv --relaxed
+./sayso_eval --relaxed --errors=1000      # every mismatch, for categorising
+./sayso_eval --relaxed --preserve-date-order   # the reference's spoken date order
+```
+
+Three real slices sit side by side in `data/`, and the third is the one that means anything:
+
+| file | what it is |
+|---|---|
+| `google_tn_slice.tsv` | 5,000 sentences from shard 00099 — the slice the grammars were developed against |
+| `heldout_slice.tsv` | 5,000 more from later in the same shard, never read while developing |
+| `shard98_slice.tsv` | 5,000 from shard 00098, a different shard fetched after every weight was fixed |
+
+Score against the last of those before believing any change helped.
+
+One example per line, `#` for comments:
 
 ```
 semiotic class <TAB> written <TAB> spoken [<TAB> canonical written]
@@ -51,9 +72,19 @@ To use it:
    `<eos>` marking sentence ends, `<self>` meaning "unchanged" and `sil` meaning "not spoken"
    (which is what punctuation is). The script reassembles sentences and keeps only those whose
    semiotic content Sayso implements, reporting on stderr how many it dropped and why. Scoring
-   a four-class normaliser on sentences containing TIME or MEASURE would measure the absence of
-   those classes rather than the quality of the four that exist; pass `--keep-all` if that is
-   what you want to see.
+   a twelve-class normaliser on sentences containing ELECTRONIC or TELEPHONE would measure the
+   absence of those classes rather than the quality of the twelve that exist; pass `--keep-all`
+   if that is what you want to see.
+
+   `convert_google_tn.py` decides what to keep from a list of implemented classes, so it needs
+   updating whenever a class is added. All eight of the corpus's numeric classes are in that
+   list. `DECADE`, `RANGE` and `ABBREV` need no entry: the corpus files decades under DATE and
+   both of the others under PLAIN, which is never dropped.
+
+   What is still dropped is `LETTERS`, `VERBATIM`, `ELECTRONIC`, `TELEPHONE`, `DIGIT` and
+   `ADDRESS`. Sayso reads dotted acronyms but not the bare all-caps runs that make up most of
+   `LETTERS`, so those sentences are excluded rather than scored as failures; see the note on
+   what is deliberately absent in the top-level README.
 
 That is all — `sayso_eval` reads `data/google_tn_slice.tsv` with no further arguments. The
 dataset has no canonical-written column, so the report will say ITN is scored against the
@@ -122,8 +153,9 @@ is no conda on this machine.
 ### Reading the results
 
 Run both modes. `--relaxed` is the only one in which a cross-system number means anything:
-strict scoring penalises NeMo for hyphenation and for the British "and", and feeds its inverse
-normaliser hyphenated text that no speech recogniser produces. Even relaxed, several remaining
+strict scoring penalises NeMo for hyphenation, for the British "and", for spelling "oh" as "o"
+and for capitalising "Celsius" — none of which is a distinction speech makes — and feeds its
+inverse normaliser hyphenated text that no speech recogniser produces. Even relaxed, several remaining
 gaps are differences of target rather than errors — the top-level README enumerates them
 against `nemo_results.tsv`.
 

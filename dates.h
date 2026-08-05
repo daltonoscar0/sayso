@@ -19,7 +19,24 @@
 
 namespace sayso {
 
-const Cascade& date_grammar();
+// Which spoken order a date takes.
+//
+// `Canonical` is the original behaviour and the default: every written format
+// reaches the same spoken form, "march fourteenth twenty fifteen", so one
+// spoken form round-trips to one written form and ITN can canonicalise.
+//
+// `PreserveWrittenOrder` speaks a date the way it was written — "the
+// fourteenth of march twenty fifteen" for "14 March 2015" and for an ISO date,
+// month first for everything else. That is what Google's Kestrel does, and on
+// a held-out corpus slice it is 84% of everything Sayso still disagrees with.
+// It costs the property above: two written forms then reach two spoken forms,
+// and ITN writes back whichever it was given.
+//
+// The two share a format stage and a speaking stage and differ only in the
+// orientation between them, so the option does not double the grammar.
+enum class DateSpeech { Canonical, PreserveWrittenOrder };
+
+const Cascade& date_grammar(DateSpeech speech = DateSpeech::Canonical);
 
 // The lowest and highest year an ISO-formatted date may carry. Each year is
 // one path through the rewrite machine, so the range is a size decision.
