@@ -301,7 +301,7 @@ accumulating cheap internal decisions.
 | `kUnspokenLeadingZeroPenalty` | 0.4 | reads `0.5` as `point five` |
 | `kUnwrittenLeadingZeroPenalty` | 0.5 | reads `.5`; dearer, so `point five` writes `0.5` |
 | `kArticleNumeratorPenalty` | 0.25 | `one half` alone, `and a half` after a whole number |
-| `kAltDenominatorPenalty` | 0.3 | reads `fourths`, writes `quarters` |
+| `kAltDenominatorPenalty` | 0.05 | reads `fourths`, writes `quarters` |
 | `kBareHourPenalty` | 0.35 | `3:00` is `three o'clock`, `3:00 pm` is `three p m` |
 | `kDottedMeridiemPenalty` | 0.4 | reads `p.m.`, writes `pm` |
 | `kMeridiemSpacingPenalty` | 0.3 | reads `3:30pm`, writes `3:30 pm` |
@@ -349,8 +349,15 @@ conclusions from the NeMo columns.
 | MONEY | 63 | 100.0% | 100.0% | 0.0% | 1.6% |
 | MEASURE | 62 | 100.0% | 100.0% | 0.0% | 11.3% |
 | DATE | 63 | 100.0% | 100.0% | 1.6% | 0.0% |
-| TIME | 62 | 100.0% | 100.0% | 9.7% | 0.0% |
-| **all** | **500** | **100.0%** | **100.0%** | **9.6%** | **7.6%** |
+| TIME | 62 | 100.0% | 90.3% | 9.7% | 0.0% |
+| **all** | **500** | **100.0%** | **98.8%** | **9.6%** | **7.6%** |
+
+The six ITN failures are the only place the two implementations disagree, and they disagree
+deliberately. All six are a bare clock time in the eleventh or twelfth hour — "eleven oh two" —
+which is also a year, and Sayso now resolves that toward the year because the corpus is
+emphatic: reading it as a time made 588 of the 1000 years in 1100-2099 fail to round-trip. A
+time keeps its meridiem, so "eleven oh two p m" is unaffected. The weight comment on
+`kTimeEntry` records the trade.
 
 **Those NeMo numbers are not a quality measurement and should not be read as one.** The slice's
 reference spoken forms follow Sayso's conventions, so Sayso scores 100% on it close to by
@@ -370,8 +377,8 @@ produces and its grammars do not expect.
 | MONEY | 63 | 100.0% | 100.0% | 100.0% | 69.8% |
 | MEASURE | 62 | 100.0% | 100.0% | 83.9% | 64.5% |
 | DATE | 63 | 100.0% | 100.0% | 39.7% | 0.0% |
-| TIME | 62 | 100.0% | 100.0% | 41.9% | 0.0% |
-| **all** | **500** | **100.0%** | **100.0%** | **75.2%** | **52.6%** |
+| TIME | 62 | 100.0% | 90.3% | 41.9% | 0.0% |
+| **all** | **500** | **100.0%** | **98.8%** | **75.2%** | **52.6%** |
 
 NeMo scoring 100% on ORDINAL, DECIMAL and MONEY-TTS is the useful signal here: where the two
 systems share a convention, the harness is fair and NeMo gets everything right. What remains
@@ -419,13 +426,18 @@ them against each other in one sitting or not at all:
 
 | | classes | cold, every sentence novel | warm, span cache populated |
 |---|---:|---:|---:|
-| four-class build | 4 | 257/s | 60,700/s |
-| eight-class build | 8 | 276/s | 74,100/s |
-| this build | **12** | **235/s** | **70,000/s** |
+| four-class build | 4 | 262/s | 62,500/s |
+| eight-class build | 8 | 283/s | 76,700/s |
+| this build | **12** | **237/s** | **70,900/s** |
 
-Three times the semiotic classes for 9% off the cold path, and the warm path still 15% faster
+Three times the semiotic classes for 10% off the cold path, and the warm path still 13% faster
 than it was with four. The eight-class row is where the factoring below paid off; the last four
 classes are what it bought.
+
+All three rows are medians of four runs, taken in one session, alternating between the builds
+over the same slice — which is the only way these numbers mean anything. Measured piecemeal
+they are worthless: an earlier attempt at the middle row was taken while a background job was
+running and came out 40% low, which nearly cost a feature that was not in fact slow.
 
 Two things had already got the classifier most of the way there. **FIRST- and LAST-set
 prefilters** answer most of its questions from the first and last symbol of a span, without
@@ -569,7 +581,8 @@ a small reference verbaliser written as ordinary arithmetic and string concatena
 from the transducers under test, which would score 100% and measure nothing.
 
 So Sayso's numbers measure agreement between two independent implementations of the same
-conventions. They do not measure agreement with the Google TN dataset's conventions, and they
+conventions — 100% one way and 98.8% the other, the gap being the six deliberate
+disagreements described above. They do not measure agreement with the Google TN dataset's conventions, and they
 are why the NeMo comparison has to be read with the care set out above.
 
 The real slice is what answers that, and "On the real Google TN slice" above reports it: the
@@ -595,7 +608,7 @@ make test
 == pipeline_tests        Scalpel bridge, CLASSIFY, end-to-end normalisation
 ```
 
-186 tests. The grammar suites test a cascade on its own, so a case there says what a machine
+196 tests. The grammar suites test a cascade on its own, so a case there says what a machine
 can read and write; where two classes want the same span, the arbitration is the classifier's
 and lives in `pipeline_tests` instead — as does whether a one-directional class is offered at
 all in ITN, which is a property of the registry rather than of any grammar.

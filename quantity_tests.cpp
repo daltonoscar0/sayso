@@ -174,6 +174,13 @@ static void fraction_tests() {
     check(itn(fraction_grammar(), "three sixty fourths") == "3/64",
           "an unhyphenated compound denominator is read");
 
+    // The singular of the same thing, which is what a speech recogniser hands
+    // an inverse normaliser. The alternate-denominator weight has to stay
+    // small enough to beat CARDINAL("one") plus ORDINAL("thirty second").
+    check(itn(fraction_grammar(), "one thirty second") == "1/32" &&
+              itn(fraction_grammar(), "one sixty fourth") == "1/64",
+          "a de-hyphenated compound denominator beats a cardinal plus an ordinal");
+
     // Unicode's precomposed fractions, which real text is full of. Read, never
     // written: "3/4" is the form that survives every encoding.
     check(table(fraction_grammar(),
@@ -252,6 +259,17 @@ static void measure_tests() {
               itn(measure_grammar(), "five kilometers") == "5 km" &&
               itn(measure_grammar(), "fifty percent") == "50%",
           "spacing is canonicalised per unit");
+
+    // A measurement may be negative. This was the one numeric grammar with no
+    // sign branch, so "-56 kg" left its hyphen to PLAIN, which copied it
+    // through welded to the first spoken word.
+    check(table(measure_grammar(),
+                {
+                    {"-56 kg", "minus fifty-six kilograms"},
+                    {"-2.75 km", "minus two point seven five kilometers"},
+                },
+                true),
+          "a measurement may be signed");
 
     check(tts(measure_grammar(), "5 lbs") == "five pounds" &&
               itn(measure_grammar(), "five pounds") == "5 lb",

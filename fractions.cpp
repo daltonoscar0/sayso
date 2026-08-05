@@ -158,15 +158,8 @@ Wfst build_fraction() {
                    vulgar_body(true, kArticleNumeratorPenalty)}),
     });
 
-    // The sign is concatenated onto the union rather than distributed over it:
-    // three copies of a grammar that embeds the cardinal machine four times
-    // over is most of what this grammar would otherwise cost.
-    Wfst sign = union_of({
-        empty_string_fst(),
-        rule("-", {"minus"}),
-        rule("-", {"negative"}, kAltSignPenalty),
-    });
-    return connect(hyphenated(concat_of({sign, union_of({simple, mixed})})));
+    return connect(hyphenated(
+        concat_of({optional_sign_fst(), union_of({simple, mixed})})));
 }
 
 }  // namespace

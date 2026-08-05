@@ -67,17 +67,6 @@ Wfst optional_magnitude() {
     return union_of(parts);
 }
 
-// An optional leading sign, concatenated once rather than once per branch:
-// A·B ∪ A·C is A·(B ∪ C), and the machine on the right of that is three times
-// smaller when B and C both contain the whole decimal grammar.
-Wfst optional_sign() {
-    return union_of({
-        empty_string_fst(),
-        rule("-", {"minus"}),
-        rule("-", {"negative"}, kAltSignPenalty),
-    });
-}
-
 }  // namespace
 
 const Wfst& decimal_core_fst() {
@@ -95,7 +84,7 @@ const Cascade& decimal_grammar() {
     // measure grammar embeds the core, and "2.5 million km" is not worth
     // another copy of these branches inside every unit.
     static const Wfst signed_decimal =
-        concat_of({optional_sign(), decimal_core_fst(), optional_magnitude()});
+        concat_of({optional_sign_fst(), decimal_core_fst(), optional_magnitude()});
     static const Wfst joined = hyphenated(signed_decimal);
     static const Cascade grammar = Cascade().then(joined);
     return grammar;

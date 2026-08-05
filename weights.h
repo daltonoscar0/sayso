@@ -173,7 +173,13 @@ constexpr float kArticleNumeratorPenalty = 0.25f;
 
 // A denominator word Sayso reads but will not write: "fourths" for "quarters",
 // and the spaced "thirty seconds" for "thirty-seconds".
-constexpr float kAltDenominatorPenalty = 0.3f;
+//
+// A hair, for the same reason kAltUnitSpellingPenalty is one — an alternate
+// spelling only has to break a tie, and anything larger loses a competition it
+// has no business in. At 0.3, FRACTION("one thirty second") cost 0.4 against
+// CARDINAL("one") plus ORDINAL("thirty second") at 0.3, so the de-hyphenated
+// spelling a speech recogniser produces came back as "1 32nd".
+constexpr float kAltDenominatorPenalty = 0.05f;
 
 // A fraction written as one of Unicode's precomposed characters ("¾", "⅞")
 // rather than with a slash. Read, because real text is full of them; not

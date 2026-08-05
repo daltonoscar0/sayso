@@ -74,6 +74,17 @@ constexpr int kBareYearLastCentury = 20;
 // "1729-1811" gets the year reading its two halves would get alone.
 const Wfst& bare_number_fst();
 
+// An optional leading sign: nothing, "minus", or "negative" at a cost.
+//
+// One machine rather than one per grammar. Every numeric class needs it and
+// each had grown its own copy, which is how MEASURE came to be the only one
+// without: "-56 kg" left the hyphen to PLAIN, which glued it to the first
+// spoken word as "-fifty-six kilograms".
+//
+// Concatenate it; do not distribute it. A·(B ∪ C) is A·B ∪ A·C with one copy
+// of A instead of two, and A here is a whole number grammar.
+const Wfst& optional_sign_fst();
+
 // "zero" .. "nine", for grammars that read digits one at a time (the
 // fractional part of "$2.5 million", say).
 const char* digit_word(int d);

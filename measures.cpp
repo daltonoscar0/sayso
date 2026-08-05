@@ -142,9 +142,14 @@ Wfst build_measure() {
         plural_tails.push_back(concat_of({separator, symbol,
                                           words_out(u.plural, kPluralPreferenceMargin)}));
     }
+    // A measurement may be negative. Every sibling numeric grammar carries the
+    // sign and this one did not, so "-56 kg" left its hyphen to PLAIN, which
+    // copied it through welded to the first spoken word: "-fifty-six
+    // kilograms". A signed amount is never "one", so the sign goes on the
+    // plural branch only.
     return connect(union_of({
         concat_of({rule("1", {"one"}), union_of(singular_tails)}),
-        concat_of({amount, union_of(plural_tails)}),
+        concat_of({optional_sign_fst(), amount, union_of(plural_tails)}),
     }));
 }
 

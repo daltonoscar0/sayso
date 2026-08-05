@@ -409,15 +409,16 @@ Wfst hyphenated(const Wfst& f) {
     return connect(compose(f, build_hyphenator(output_vocabulary(f))));
 }
 
-const Wfst& bare_number_fst() {
-    // The sign is concatenated onto the number rather than distributed over
-    // three copies of it: A·B ∪ A·C is A·(B ∪ C), and B here is the whole
-    // cardinal machine.
+const Wfst& optional_sign_fst() {
     static const Wfst sign = union_of({
         empty_string_fst(),
         rule("-", {"minus"}),
         rule("-", {"negative"}, kAltSignPenalty),
     });
+    return sign;
+}
+
+const Wfst& bare_number_fst() {
     // A bare four-digit number in the year range gets the paired reading, by
     // the margin on the general branch rather than by excluding anything. A
     // signed number is never a year, so the year branch stands outside the
@@ -429,7 +430,7 @@ const Wfst& bare_number_fst() {
     // margin and "II" at this penalty, so the digits win; a separate class
     // would have had to beat PLAIN instead, and could not.
     static const Wfst body = union_of({
-        reweight(concat_of({sign, cardinal_core_fst()}), kBareYearMargin),
+        reweight(concat_of({optional_sign_fst(), cardinal_core_fst()}), kBareYearMargin),
         year_reading(kBareYearFirstCentury, kBareYearLastCentury, false),
         reweight(roman_numerals(), kRomanNumeralPenalty),
     });
