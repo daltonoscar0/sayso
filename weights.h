@@ -307,6 +307,11 @@ constexpr float kLettersEntry = 0.05f;
 // A genuine spaced range wins on a different margin entirely: leaving "5 - 0"
 // alone costs PLAIN 1.4.
 constexpr float kRangeEntry = 0.25f;
+
+// Ordinary, because the guard that keeps dates safe is structural: four
+// hyphen-joined groups, which no date has. See telephone.cpp for why a weight
+// could not have done it.
+constexpr float kTelephoneEntry = 0.1f;
 constexpr float kMeasureEntry = 0.05f;
 constexpr float kDecimalEntry = 0.05f;
 constexpr float kFractionEntry = 0.1f;

@@ -13,6 +13,7 @@
 #include "money.h"
 #include "numbers.h"
 #include "ranges.h"
+#include "telephone.h"
 #include "text.h"
 #include "times.h"
 #include "weights.h"
@@ -33,6 +34,7 @@ const char* class_name(SemioticClass c) {
         case SemioticClass::ABBREV:   return "ABBREV";
         case SemioticClass::LETTERS:  return "LETTERS";
         case SemioticClass::RANGE:    return "RANGE";
+        case SemioticClass::TELEPHONE: return "TELEPHONE";
         case SemioticClass::PLAIN:    break;
     }
     return "PLAIN";
@@ -57,6 +59,7 @@ const std::vector<Grammar>& grammars(DateSpeech speech) {
         {SemioticClass::LETTERS,  &letters_grammar(),  kLettersEntry, true},
         {SemioticClass::ABBREV,   &abbreviation_grammar(), kAbbreviationEntry, true},
         {SemioticClass::RANGE,    &range_grammar(),    kRangeEntry, true},
+        {SemioticClass::TELEPHONE, &telephone_grammar(), kTelephoneEntry, true},
         };
     };
     static const std::vector<Grammar> canonical = build(DateSpeech::Canonical);

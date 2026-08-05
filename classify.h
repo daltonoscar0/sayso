@@ -23,7 +23,7 @@
 namespace sayso {
 
 enum class SemioticClass {
-    PLAIN, CARDINAL, ORDINAL, DECIMAL, FRACTION, MONEY, MEASURE, DATE, TIME, DECADE, ABBREV, LETTERS, RANGE
+    PLAIN, CARDINAL, ORDINAL, DECIMAL, FRACTION, MONEY, MEASURE, DATE, TIME, DECADE, ABBREV, LETTERS, RANGE, TELEPHONE
 };
 const char* class_name(SemioticClass c);
 
@@ -78,7 +78,7 @@ std::vector<Segment> classify(const std::string& input,
 // Both caps are affordable because CLASSIFY runs each grammar once per span
 // *start* rather than once per span (see Cascade::apply_prefixes), so cost
 // grows with the longest span a grammar can actually match, not with the cap.
-constexpr size_t kMaxWrittenSpanTokens = 8;
+constexpr size_t kMaxWrittenSpanTokens = 10;
 constexpr size_t kMaxSpokenSpanTokens = 24;
 inline size_t max_span_tokens(Direction dir) {
     return dir == Direction::TTS ? kMaxWrittenSpanTokens : kMaxSpokenSpanTokens;

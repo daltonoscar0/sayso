@@ -20,6 +20,7 @@
 #include "numbers.h"
 #include "property.h"
 #include "ranges.h"
+#include "telephone.h"
 #include "wfst.h"
 
 using namespace sayso;
@@ -278,6 +279,28 @@ static void range_tests() {
           "long operands, em dashes and colons are all refused");
 }
 
+// ---- telephone numbers, ISBNs and serials -----------------------------------
+
+static void telephone_tests() {
+    check(table(telephone_grammar(),
+                {
+                    {"978-0-131-40221-8",
+                     "nine seven eight o one three one four o two two one eight"},
+                    {"0-671-07580-2", "o six seven one o seven five eight o two"},
+                },
+                false),
+          "a hyphen chain is read digit by digit, with zero as 'o'");
+
+    // Four groups minimum, and structurally rather than by weight. Three is
+    // exactly the shape of an ISO date, and no entry cost separates them: a
+    // zero-padded "2015-03-04" costs DATE 0.95, while RANGE plus a run of
+    // negative cardinals costs 0.88, and nothing lies in both intervals.
+    check(tts(telephone_grammar(), "2015-03-14") == "<none>" &&
+              tts(telephone_grammar(), "1729-1811") == "<none>" &&
+              tts(telephone_grammar(), "5-0") == "<none>",
+          "three groups or fewer is not a telephone number");
+}
+
 // ---- properties -------------------------------------------------------------
 
 static void property_tests() {
@@ -343,6 +366,7 @@ int main() {
     letters_tests();
     roman_tests();
     range_tests();
+    telephone_tests();
     property_tests();
     std::cout << "\nTests run:" << run << "\nTests failed: " << failed << "\n";
     return failed == 0 ? 0 : 1;

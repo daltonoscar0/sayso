@@ -332,6 +332,14 @@ static void later_class_tests() {
     check(tagging("9:30", Direction::TTS) == "TIME(9:30)",
           "a colon between numbers stays a time");
 
+    // TELEPHONE exists mostly to stop RANGE claiming the first two fields of a
+    // hyphen chain and leaving the rest to negative cardinals.
+    check(tagging("978-0-131-40221-8", Direction::TTS) ==
+              "TELEPHONE(978-0-131-40221-8)" &&
+              tagging("2015-03-14", Direction::TTS) == "DATE(2015-03-14)" &&
+              tagging("1729-1811", Direction::TTS) == "RANGE(1729-1811)",
+          "a hyphen chain is a serial, three fields are a date, two are a range");
+
     check(tagging("1970s", Direction::TTS) == "DECADE(1970s)" &&
               tagging("1970", Direction::TTS) == "CARDINAL(1970)",
           "a decade is its own class, a bare year is a cardinal");

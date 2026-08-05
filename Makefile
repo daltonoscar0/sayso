@@ -6,7 +6,7 @@ SCALPEL_SRC = $(SCALPEL_DIR)/tokenizer.cpp \
               $(SCALPEL_DIR)/char_classes.cpp
 
 ENGINE_SRC  = wfst.cpp symbols.cpp
-GRAMMAR_SRC = numbers.cpp money.cpp dates.cpp decades.cpp abbrev.cpp letters.cpp ranges.cpp \
+GRAMMAR_SRC = numbers.cpp money.cpp dates.cpp decades.cpp abbrev.cpp letters.cpp ranges.cpp telephone.cpp \
               decimals.cpp fractions.cpp times.cpp measures.cpp
 LIB_SRC     = $(ENGINE_SRC) $(GRAMMAR_SRC) text.cpp classify.cpp normalizer.cpp
 HDRS        = $(wildcard *.h)
