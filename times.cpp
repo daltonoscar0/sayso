@@ -28,21 +28,32 @@ std::vector<std::string> cardinal_words(int n) {
     return {kTens[n / 10], kUnits[n % 10]};
 }
 
-// 0-23, zero-padded or not. Padding costs, so ITN writes "3:30".
-Wfst hour_field() {
+// Zero-padded or not. Padding costs, so ITN writes "3:30".
+//
+// The range is a parameter because the two clocks say a round hour
+// differently: 1-12 take "o'clock", 0 and 13-23 take "hundred".
+Wfst hour_field(int first, int last) {
     std::vector<Wfst> hours;
-    for (int h = 0; h <= kLastHour; ++h) {
+    for (int h = first; h <= last; ++h) {
         hours.push_back(rule(std::to_string(h), cardinal_words(h)));
         if (h < 10) hours.push_back(rule(two_digits(h), cardinal_words(h), kZeroPadPenalty));
     }
     return union_of(hours);
 }
 
-// Always two written digits. A round hour may be spoken as "o'clock" or not
-// spoken at all, and the caller says which of those it would rather produce.
-Wfst minute_field(float oclock_cost, float bare_cost) {
+Wfst civil_hours() { return hour_field(1, 12); }
+Wfst military_hours() {
+    return union_of({hour_field(0, 0), hour_field(13, kLastHour)});
+}
+
+// Always two written digits. A round hour may be spoken as "o'clock", as
+// "hundred", or not spoken at all; the caller says which of the three it would
+// rather produce, which is what makes "10:00" an o'clock and "18:00" a
+// hundred without either reading being refused to the other.
+Wfst minute_field(float oclock_cost, float hundred_cost, float bare_cost) {
     std::vector<Wfst> minutes{
         rule("00", {"o'clock"}, oclock_cost),
+        rule("00", {"hundred"}, hundred_cost),
         chars_in("00", bare_cost),
     };
     for (int m = 1; m <= 9; ++m)
@@ -69,20 +80,38 @@ const std::vector<Meridiem>& meridiems() {
 }
 
 Wfst build_time() {
-    // Standing alone, a round hour is "o'clock"; before a meridiem it is not
-    // said at all. The same weight, on opposite branches.
-    Wfst plain = concat_of({hour_field(), chars_in(":"),
-                            minute_field(0.0f, kBareHourPenalty)});
-    Wfst before_meridiem = concat_of({hour_field(), chars_in(":"),
-                                      minute_field(kBareHourPenalty, 0.0f)});
+    // Standing alone, a round hour is "o'clock" on a twelve-hour clock and
+    // "hundred" on a twenty-four-hour one; before a meridiem it is not said at
+    // all. Three weights, leaning differently in each branch.
+    Wfst civil = concat_of({civil_hours(), chars_in(":"),
+                            minute_field(0.0f, kWrongClockStylePenalty,
+                                         kBareHourPenalty)});
+    Wfst military = concat_of({military_hours(), chars_in(":"),
+                               minute_field(kWrongClockStylePenalty, 0.0f,
+                                            kBareHourPenalty)});
+    Wfst before_meridiem = concat_of({civil_hours(), chars_in(":"),
+                                      minute_field(kBareHourPenalty,
+                                                   kWrongClockStylePenalty, 0.0f)});
+    // The British full stop, and only where a meridiem follows it. Without
+    // one, "10.30" is a decimal far more often than it is a time, and the
+    // classifier has no context to tell them apart.
+    Wfst dotted = concat_of({civil_hours(), chars_in(".", kDotTimeSeparatorPenalty),
+                             minute_field(kBareHourPenalty, kWrongClockStylePenalty,
+                                          0.0f)});
     Wfst separator =
         union_of({chars_in(" "), empty_string_fst(kMeridiemSpacingPenalty)});
 
-    std::vector<Wfst> branches{plain};
-    for (const Meridiem& m : meridiems())
-        branches.push_back(concat_of({before_meridiem, separator,
-                                      chars_in(m.written, m.cost),
-                                      words_out(m.spoken)}));
+    // "5pm", with no minute field at all. Read, but ITN writes "5:00 pm".
+    Wfst bare_hour = reweight(civil_hours(), kOmittedMinutePenalty);
+
+    std::vector<Wfst> branches{civil, military};
+    for (const Meridiem& m : meridiems()) {
+        Wfst tail = concat_of({separator, chars_in(m.written, m.cost),
+                               words_out(m.spoken)});
+        branches.push_back(concat_of({before_meridiem, tail}));
+        branches.push_back(concat_of({dotted, tail}));
+        branches.push_back(concat_of({bare_hour, tail}));
+    }
     return connect(hyphenated(union_of(branches)));
 }
 

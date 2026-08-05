@@ -80,15 +80,44 @@ static void money_tests() {
                 true),
           "currency amounts round trip in both directions");
 
+    // A magnitude survives the round trip only where plain digits could not
+    // say the same words: "two point five million" has no numeral spelling.
     check(table(money_grammar(),
                 {
                     {"$2.5 million", "two point five million dollars"},
                     {"$1.75 billion", "one point seven five billion dollars"},
-                    {"$3 million", "three million dollars"},
-                    {"€250 thousand", "two hundred fifty thousand euros"},
                 },
                 true),
           "magnitudes: $2.5 million");
+
+    // Where digits do say the same words, digits are what ITN writes — the
+    // same canonicalisation that drops the thousands comma. Both written forms
+    // are still read.
+    check(tts(money_grammar(), "$3 million") == "three million dollars" &&
+              tts(money_grammar(), "€250 thousand") == "two hundred fifty thousand euros" &&
+              itn(money_grammar(), "three million dollars") == "$3000000" &&
+              itn(money_grammar(), "two hundred fifty thousand euros") == "€250000",
+          "a magnitude word is read, but digits are written where they suffice");
+
+    // Newspaper suffixes, which arrive case-folded: "$3B" is "$3b" by the time
+    // the grammar sees it.
+    check(table(money_grammar(),
+                {
+                    {"$6.5m", "six point five million dollars"},
+                    {"£20m", "twenty million pounds"},
+                    {"$26.6bn", "twenty-six point six billion dollars"},
+                    {"$3b", "three billion dollars"},
+                    {"$50k", "fifty thousand dollars"},
+                },
+                false),
+          "letter magnitude suffixes are read");
+
+    check(itn(money_grammar(), "six point five million dollars") == "$6.5 million",
+          "a suffix is read, the spelled magnitude is written");
+
+    check(tts(money_grammar(), "$ 1") == "one dollar" &&
+              itn(money_grammar(), "one dollar") == "$1",
+          "a space after the symbol is read, never written");
 
     check(tts(money_grammar(), "$1,234") ==
               "one thousand two hundred thirty-four dollars" &&

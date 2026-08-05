@@ -67,6 +67,22 @@ const std::vector<Unit>& units() {
         {"min", {"minute"}, {"minutes"}, true},
         {"hr", {"hour"}, {"hours"}, true},
         {"ms", {"millisecond"}, {"milliseconds"}, true},
+        // area, and the density forms that follow an amount with no space
+        {"ha", {"hectare"}, {"hectares"}, true},
+        {"km²", {"square", "kilometer"}, {"square", "kilometers"}, true, {"km2"}},
+        {"m²", {"square", "meter"}, {"square", "meters"}, true, {"m2"}},
+        {"sq mi", {"square", "mile"}, {"square", "miles"}, true, {"mi²"}},
+        {"sq ft", {"square", "foot"}, {"square", "feet"}, true, {"ft²"}},
+        {"/km²", {"per", "square", "kilometer"}, {"per", "square", "kilometers"},
+         false, {"/km2"}},
+        {"/m²", {"per", "square", "meter"}, {"per", "square", "meters"}, false, {"/m2"}},
+        {"/km", {"per", "kilometer"}, {"per", "kilometer"}, false},
+        // power
+        {"W", {"watt"}, {"watts"}, true},
+        {"kW", {"kilowatt"}, {"kilowatts"}, true},
+        {"MW", {"megawatt"}, {"megawatts"}, true},
+        {"GW", {"gigawatt"}, {"gigawatts"}, true},
+        {"hp", {"horsepower"}, {"horsepower"}, true},
         // frequency
         {"Hz", {"hertz"}, {"hertz"}, true},
         {"kHz", {"kilohertz"}, {"kilohertz"}, true},
@@ -77,8 +93,12 @@ const std::vector<Unit>& units() {
         {"MB", {"megabyte"}, {"megabytes"}, true},
         {"GB", {"gigabyte"}, {"gigabytes"}, true},
         {"TB", {"terabyte"}, {"terabytes"}, true},
-        // symbols, written flush against the amount
+        // symbols, written flush against the amount. "50 percent" is spelled
+        // out often enough to read; "%" is what ITN writes, so the spelled
+        // form is a separate entry carrying a cost rather than an alternate
+        // spelling, which would have to share "%"'s spacing.
         {"%", {"percent"}, {"percent"}, false},
+        {"percent", {"percent"}, {"percent"}, true, {}, kAltUnitSpellingPenalty},
         {"°", {"degree"}, {"degrees"}, false},
         {"°C", {"degree", "celsius"}, {"degrees", "celsius"}, false},
         {"°F", {"degree", "fahrenheit"}, {"degrees", "fahrenheit"}, false},

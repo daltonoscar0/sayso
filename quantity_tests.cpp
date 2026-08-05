@@ -170,6 +170,32 @@ static void fraction_tests() {
     check(itn(fraction_grammar(), "three sixty fourths") == "3/64",
           "an unhyphenated compound denominator is read");
 
+    // Unicode's precomposed fractions, which real text is full of. Read, never
+    // written: "3/4" is the form that survives every encoding.
+    check(table(fraction_grammar(),
+                {
+                    {"½", "one half"},
+                    {"¾", "three quarters"},
+                    {"⅞", "seven eighths"},
+                    {"⅔", "two thirds"},
+                    {"2½", "two and a half"},
+                    {"4¾", "four and three quarters"},
+                },
+                false),
+          "precomposed fractions are read");
+
+    check(itn(fraction_grammar(), "seven eighths") == "7/8" &&
+              itn(fraction_grammar(), "two and a half") == "2 1/2",
+          "a precomposed fraction is read, a slashed one is written");
+
+    // A precomposed character cannot be misread, so the space before it is
+    // optional. The slashed form's space is not: without it, "21/2" would be
+    // a mixed number rather than twenty-one halves.
+    check(tts(fraction_grammar(), "3 ½") == "three and a half" &&
+              tts(fraction_grammar(), "3½") == "three and a half" &&
+              tts(fraction_grammar(), "21/2") == "twenty-one halves",
+          "only a precomposed fraction may sit flush against its whole number");
+
     // Singular against plural, by margin rather than by exclusion: the plural
     // branch fits "1/2" too, it is just a hair dearer.
     check(tts(fraction_grammar(), "1/4") == "one quarter" &&
@@ -232,6 +258,38 @@ static void measure_tests() {
     check(tts(measure_grammar(), "3 in") == "<none>" &&
               tts(measure_grammar(), "5 s") == "<none>",
           "homograph units are not in the table");
+
+    check(table(measure_grammar(),
+                {
+                    {"69 ha", "sixty-nine hectares"},
+                    {"129 kW", "one hundred twenty-nine kilowatts"},
+                    {"250 MW", "two hundred fifty megawatts"},
+                    {"173 hp", "one hundred seventy-three horsepower"},
+                    {"294 km²", "two hundred ninety-four square kilometers"},
+                    {"700 m²", "seven hundred square meters"},
+                    {"1046 sq mi", "one thousand forty-six square miles"},
+                },
+                true),
+          "area, power and the units a corpus actually uses");
+
+    // The squared units have an ASCII spelling ending in a digit, which is
+    // where the alternate-spelling weight has to stay small: at a third of a
+    // unit, MEASURE("40.285 km") plus CARDINAL("2") was cheaper than
+    // MEASURE("40.285 km2") and the span split in two.
+    check(tts(measure_grammar(), "40.285 km2") ==
+              "forty point two eight five square kilometers" &&
+              itn(measure_grammar(), "forty point two eight five square kilometers") ==
+                  "40.285 km²",
+          "an ASCII squared unit is read, the typographic one is written");
+
+    // Density, which is written flush against its amount.
+    check(tts(measure_grammar(), "725.1/km²") ==
+              "seven hundred twenty-five point one per square kilometers",
+          "a density unit needs no space");
+
+    check(tts(measure_grammar(), "50 percent") == "fifty percent" &&
+              itn(measure_grammar(), "fifty percent") == "50%",
+          "'percent' spelled out is read, '%' is written");
 }
 
 // ---- properties -------------------------------------------------------------

@@ -103,10 +103,29 @@ Wfst canonical_date() {
 // grammar a single statement of how a date is *said*, with the formats as a
 // separate, tiny statement of how one may be *written*.
 
+// The abbreviations a date is written with, each optionally followed by a full
+// stop. "may" is already three letters and has none of its own.
+const char* kMonthAbbreviations[13] = {"",    "jan", "feb", "mar", "apr", "",
+                                       "jun", "jul", "aug", "sep", "oct", "nov",
+                                       "dec"};
+
 Wfst month_name_to_number() {
     std::vector<Wfst> months;
-    for (int m = 1; m <= 12; ++m)
-        months.push_back(transducer(chars_of(kMonths[m]), chars_of(std::to_string(m))));
+    for (int m = 1; m <= 12; ++m) {
+        std::string number = std::to_string(m);
+        months.push_back(transducer(chars_of(kMonths[m]), chars_of(number)));
+
+        // An abbreviation is read but never written: ITN emits M/D/YYYY, so
+        // no month name of any length reaches the written tape from here.
+        std::vector<std::string> short_forms;
+        if (kMonthAbbreviations[m][0]) short_forms.push_back(kMonthAbbreviations[m]);
+        if (m == 9) short_forms.push_back("sept");
+        for (const std::string& form : short_forms)
+            for (const std::string& stop : {std::string(), std::string(".")})
+                months.push_back(reweight(
+                    transducer(chars_of(form + stop), chars_of(number)),
+                    kAbbreviatedMonthPenalty));
+    }
     return union_of(months);
 }
 

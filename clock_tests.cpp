@@ -109,6 +109,22 @@ static void hour_tests() {
               true),
           "twenty-four-hour times are read");
 
+    // A round hour on a twenty-four-hour clock is "hundred", not "o'clock" —
+    // "18:00" is eighteen hundred. Each reading stays available to the other
+    // clock at a cost, so neither is refused.
+    check(table(
+              {
+                  {"18:00", "eighteen hundred"},
+                  {"17:00", "seventeen hundred"},
+                  {"22:00", "twenty-two hundred"},
+              },
+              true),
+          "a round hour past twelve is 'hundred'");
+
+    check(tts("10:00") == "ten o'clock" && tts("18:00") == "eighteen hundred" &&
+              itn("ten hundred") == "10:00" && itn("eighteen o'clock") == "18:00",
+          "each clock's reading is still available to the other");
+
     // Padding costs, so ITN writes the unpadded hour.
     check(tts("03:30") == "three thirty" && itn("three thirty") == "3:30",
           "a zero-padded hour is read, an unpadded one is written");
@@ -145,6 +161,24 @@ static void meridiem_tests() {
               tts("3:30pm") == "three thirty p m" &&
               itn("three thirty p m") == "3:30 pm",
           "dotted and unspaced meridiems are read, 'pm' with a space is written");
+
+    // A bare hour with a meridiem and no minute field at all — how a time is
+    // usually written. ITN puts the minutes back.
+    check(table(
+              {
+                  {"10am", "ten a m"},
+                  {"5pm", "five p m"},
+              },
+              false),
+          "a bare hour takes a meridiem with no minutes");
+
+    check(tts("6 p.m.") == "six p m" && itn("five p m") == "5:00 pm",
+          "a bare hour is read, a time with its minutes is written");
+
+    // The British full stop, and only before a meridiem: "10.30" on its own is
+    // a decimal far more often than it is a time, and CLASSIFY sees no context.
+    check(tts("10.30pm") == "ten thirty p m" && tts("10.30 am") == "ten thirty a m",
+          "a full stop separates the fields when a meridiem follows");
 }
 
 // ---- properties -------------------------------------------------------------

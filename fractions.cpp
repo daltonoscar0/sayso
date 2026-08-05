@@ -89,7 +89,7 @@ Wfst numerator_one(float article_cost, float one_cost) {
 // Numerator, slash, agreeing denominator. The singular branch only fits a
 // numerator of exactly one; the margin on the plural branch is what makes the
 // singular win wherever both do.
-Wfst fraction_body(float article_cost, float one_cost) {
+Wfst slashed_body(float article_cost, float one_cost) {
     return union_of({
         concat_of({numerator_one(article_cost, one_cost), chars_in("/"),
                    denominator(false, 0.0f)}),
@@ -98,11 +98,58 @@ Wfst fraction_body(float article_cost, float one_cost) {
     });
 }
 
+// Unicode's precomposed fractions. Each is a single character, so there is no
+// numerator to read separately and the whole thing is one rule — which is also
+// what makes the space before it optional in a mixed number without "21/2"
+// becoming ambiguous.
+struct VulgarFraction {
+    const char* written;
+    int numerator;              // 1 takes the article, the rest are plural
+    const char* denominator;    // already in the agreeing number
+};
+const VulgarFraction kVulgarFractions[] = {
+    {"½", 1, "half"},      {"⅓", 1, "third"},    {"¼", 1, "quarter"},
+    {"⅕", 1, "fifth"},     {"⅙", 1, "sixth"},    {"⅐", 1, "seventh"},
+    {"⅛", 1, "eighth"},    {"⅑", 1, "ninth"},    {"⅒", 1, "tenth"},
+    {"⅔", 2, "thirds"},    {"¾", 3, "quarters"},
+    {"⅖", 2, "fifths"},    {"⅗", 3, "fifths"},   {"⅘", 4, "fifths"},
+    {"⅚", 5, "sixths"},
+    {"⅜", 3, "eighths"},   {"⅝", 5, "eighths"},  {"⅞", 7, "eighths"},
+};
+
+Wfst vulgar_body(float article_cost, float one_cost) {
+    static const char* kNumerators[8] = {"", "one", "two",  "three",
+                                         "four", "five", "six", "seven"};
+    std::vector<Wfst> parts;
+    for (const VulgarFraction& v : kVulgarFractions) {
+        if (v.numerator == 1) {
+            parts.push_back(rule(v.written, {"a", v.denominator}, article_cost));
+            parts.push_back(rule(v.written, {"one", v.denominator}, one_cost));
+        } else {
+            parts.push_back(
+                rule(v.written, {kNumerators[v.numerator], v.denominator}));
+        }
+    }
+    return reweight(union_of(parts), kVulgarFractionPenalty);
+}
+
 Wfst build_fraction() {
     // Standing alone the numerator is "one"; after a whole number it is "a".
-    Wfst simple = fraction_body(kArticleNumeratorPenalty, 0.0f);
-    Wfst mixed = concat_of({cardinal_positive_fst(), chars_in(" "), words_out({"and"}),
-                            fraction_body(0.0f, kArticleNumeratorPenalty)});
+    Wfst simple = union_of({
+        slashed_body(kArticleNumeratorPenalty, 0.0f),
+        vulgar_body(kArticleNumeratorPenalty, 0.0f),
+    });
+    // "2 1/2" needs its space — without one, "21/2" would read as a mixed
+    // number rather than as twenty-one halves. A precomposed character cannot
+    // be misread that way, so there the space is optional.
+    Wfst mixed = union_of({
+        concat_of({cardinal_positive_fst(), chars_in(" "), words_out({"and"}),
+                   slashed_body(0.0f, kArticleNumeratorPenalty)}),
+        concat_of({cardinal_positive_fst(),
+                   union_of({chars_in(" ", kMixedNoSpacePenalty), empty_string_fst()}),
+                   words_out({"and"}),
+                   vulgar_body(0.0f, kArticleNumeratorPenalty)}),
+    });
 
     // The sign is concatenated onto the union rather than distributed over it:
     // three copies of a grammar that embeds the cardinal machine four times

@@ -66,6 +66,22 @@ constexpr float kShortCentsPenalty = 0.5f;
 // without this the two branches tie and ITN would pick either.
 constexpr float kExplicitZeroCentsPenalty = 0.05f;
 
+// A magnitude written as a letter suffix ("$6.5m", "$26.6bn") rather than
+// spelled out ("$6.5 million"). Both are read; the spelled form is the one ITN
+// writes, being the one that survives being read aloud from the page.
+constexpr float kLetterMagnitudePenalty = 0.4f;
+
+// Writing a magnitude word at all, where plain digits would say the same
+// thing. "fifty thousand dollars" fits "$50 thousand" and "$50000" equally and
+// the two would otherwise tie; the hair makes ITN write the digits, which is
+// the same canonicalisation that drops thousands separators. It changes
+// nothing for "$2.5 million", whose words no plain numeral produces.
+constexpr float kSpelledMagnitudePenalty = 0.05f;
+
+// A space between a currency symbol and its amount, as in "$ 1". Written that
+// way often enough to read, never worth producing.
+constexpr float kCurrencySpacePenalty = 0.3f;
+
 // ---- inside the date grammar -----------------------------------------------
 
 // A zero-padded month or day ("03/14" rather than "3/14").
@@ -106,6 +122,10 @@ constexpr float kCardinalYearPenalty = 0.6f;
 // "one thousand nine hundred eighty-four".
 constexpr float kBareYearMargin = 0.01f;
 
+// A month written short: "Jun 29, 2011", "Sept. 3, 1985". Read only — ITN
+// emits M/D/YYYY, so no month name of any length reaches the written tape.
+constexpr float kAbbreviatedMonthPenalty = 0.2f;
+
 // A comma before the year in "March 14, 2015" is expected; leaving it out is
 // accepted at a small cost.
 constexpr float kMissingDateCommaPenalty = 0.3f;
@@ -133,6 +153,16 @@ constexpr float kArticleNumeratorPenalty = 0.25f;
 // and the spaced "thirty seconds" for "thirty-seconds".
 constexpr float kAltDenominatorPenalty = 0.3f;
 
+// A fraction written as one of Unicode's precomposed characters ("¾", "⅞")
+// rather than with a slash. Read, because real text is full of them; not
+// written, because "3/4" is the form that survives every encoding.
+constexpr float kVulgarFractionPenalty = 0.4f;
+
+// A mixed number written flush against its fraction ("2½"). Only reachable for
+// a precomposed character, where it is unambiguous — allowing it for the
+// slashed form would make "21/2" read as "two and a half".
+constexpr float kMixedNoSpacePenalty = 0.2f;
+
 // ---- inside the time grammar ------------------------------------------------
 
 // A round hour left unsaid. Which way this leans depends on the meridiem:
@@ -144,6 +174,21 @@ constexpr float kBareHourPenalty = 0.35f;
 constexpr float kDottedMeridiemPenalty = 0.4f;
 constexpr float kMeridiemSpacingPenalty = 0.3f;
 
+// A round hour said the wrong way round for its clock. "10:00" is "ten
+// o'clock" and "18:00" is "eighteen hundred"; each reading is available to the
+// other clock at this cost, so neither is refused and the ordinary one wins.
+constexpr float kWrongClockStylePenalty = 0.5f;
+
+// A time written with no minute field at all: "5pm" for "5:00 pm". Read,
+// because that is how it is usually written; not written, because a time with
+// its minutes spelled out is the form ITN can always produce.
+constexpr float kOmittedMinutePenalty = 0.3f;
+
+// The British "10.30pm", where a full stop separates the fields. Only
+// reachable when a meridiem follows — without one, "10.30" is a decimal, and
+// far more often than it is a time.
+constexpr float kDotTimeSeparatorPenalty = 0.4f;
+
 // ---- inside the measure grammar ---------------------------------------------
 
 // A unit spaced the way its neighbours are not: "5km" for "5 km", "50 %" for
@@ -151,9 +196,14 @@ constexpr float kMeridiemSpacingPenalty = 0.3f;
 constexpr float kMeasureSpacingPenalty = 0.3f;
 
 // A unit spelling Sayso reads but will not write, so that ITN settles on one
-// of them: "lbs" where "lb" is canonical. Without it the two tie and which one
-// comes out changes between builds.
-constexpr float kAltUnitSpellingPenalty = 0.3f;
+// of them: "lbs" where "lb" is canonical, "km2" where "km²" is. Without it the
+// two tie and which one comes out changes between builds.
+//
+// A hair, because that is all a tie needs, and because anything larger loses a
+// competition it has no business being in: the alternates are exactly the
+// spellings that end in a digit, so "40.285 km2" at a third of a unit was
+// dearer than MEASURE("40.285 km") plus CARDINAL("2") and split in two.
+constexpr float kAltUnitSpellingPenalty = 0.05f;
 
 // A unit whose *spoken* form belongs to another class as well. "three pounds"
 // is sterling far more often than it is weight, and CLASSIFY has no context to
