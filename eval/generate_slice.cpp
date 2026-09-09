@@ -4,7 +4,7 @@
 // The spoken side is produced by the small reference verbaliser below, not by
 // Sayso's transducers. That matters: a slice generated from the grammars
 // under test would score 100% and measure nothing. This one is written the
-// other way — as ordinary arithmetic and string concatenation — so a
+// other way, as ordinary arithmetic and string concatenation, so a
 // disagreement is a real disagreement between two implementations of the same
 // conventions. It still cannot tell you whether those conventions match the
 // Google TN dataset's; only the real slice can.
@@ -128,7 +128,7 @@ std::string two_digits(int n) {
 struct Example {
     std::string semiotic_class, written, spoken;
     // The written form ITN is expected to produce. It differs from `written`
-    // only where a class has several written forms for one spoken form —
+    // only where a class has several written forms for one spoken form,
     // dates, in practice. See the note in eval/eval_main.cpp.
     std::string canonical;
 };

@@ -8,8 +8,8 @@
 // it is the only correct one.
 //
 // A magnitude word is deliberately *not* part of this grammar. "3.5 million"
-// comes out right without one — DECIMAL claims "3.5" and "million" is a word
-// PLAIN copies through, in both directions — so putting the magnitudes in the
+// comes out right without one, DECIMAL claims "3.5" and "million" is a word
+// PLAIN copies through, in both directions, so putting the magnitudes in the
 // machine would only add states to say what falls out anyway.
 #include "wfst.h"
 

@@ -21,7 +21,7 @@ struct Abbreviation {
 const std::vector<Abbreviation>& abbreviations() {
     static const std::vector<Abbreviation> table = {
         // "st" is "saint" 3,205 times and "street" 156. Twenty to one is
-        // enough to pick, and not enough to be right about "Oxford St" — the
+        // enough to pick, and not enough to be right about "Oxford St", the
         // same context-free bet as reading "second" as an ordinal.
         {"st", {"saint"}},
         {"vol", {"volume"}},      // 2,019
@@ -48,7 +48,7 @@ const std::vector<Abbreviation>& abbreviations() {
 Wfst build_abbreviation() {
     // No trailing-stop branch. The adapter in text.cpp splits a final full
     // stop off a token that has no other, so "Ltd." reaches CLASSIFY as two
-    // tokens — and a branch reading "ltd." would then claim both and swallow
+    // tokens, and a branch reading "ltd." would then claim both and swallow
     // the sentence's punctuation: "Acme Ltd. The deal closed." came out as
     // "Acme limited The deal closed." 593 sentences in the shard end this way.
     std::vector<Wfst> parts;

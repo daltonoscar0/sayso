@@ -6,7 +6,7 @@
 // makes it one-directional: expanding "St" to "saint" is normalisation, and
 // contracting every "saint" back to "St" is not. CLASSIFY prices PLAIN per
 // character, so a five-letter word costs 5.0 against this class's entry cost
-// of 0.05 — there is no weight that lets a lexical class lose to leaving the
+// of 0.05, there is no weight that lets a lexical class lose to leaving the
 // word alone. The registry marks it `speaking_only` instead; see classify.h.
 //
 // The table is short on purpose. Every entry earned its place by being an

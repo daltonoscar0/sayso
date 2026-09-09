@@ -285,7 +285,7 @@ Wfst compose(const Wfst& a, const Wfst& b, std::vector<int>* left_of) {
     return out;
 }
 
-// When nothing survives, the result is empty_fst() — which has one state, not
+// When nothing survives, the result is empty_fst(), which has one state, not
 // none. `survivor_of` has to gain an entry for it or the invariant callers
 // rely on, one entry per state of the result, silently breaks: run_prefix_
 // stages indexed mapping[0] into an empty vector on every span no grammar

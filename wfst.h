@@ -5,9 +5,9 @@
 //
 // Tropical means "cost": a path's weight is the sum of its arc weights plus
 // the final weight of the state it ends in, and the best analysis of an input
-// is the cheapest path. Every ambiguity in Sayso — "twenty five" vs
+// is the cheapest path. Every ambiguity in Sayso, "twenty five" vs
 // "twenty-five", "$1 dollar" vs "$1 dollars", MONEY vs CARDINAL over the same
-// span — is settled by that single rule.
+// span, is settled by that single rule.
 //
 // The operations below are the whole algebra the grammars are written in.
 // Nothing in the grammar files pokes at states or arcs directly; they call
@@ -82,8 +82,8 @@ Wfst project_output(const Wfst& a);
 //
 // `left_of`, when given, receives the left-hand component of every state
 // created: left_of[s] is the state of `a` that output state s was paired
-// from. It is what lets a caller carry a property of `a`'s states — an input
-// position, say — through a chain of compositions.
+// from. It is what lets a caller carry a property of `a`'s states, an input
+// position, say, through a chain of compositions.
 Wfst compose(const Wfst& a, const Wfst& b, std::vector<int>* left_of = nullptr);
 
 // Drop states that are unreachable or from which no final state is reachable.
@@ -103,7 +103,7 @@ struct Path {
 Path shortest_path(const Wfst& a);
 
 // The distance pass on its own, so one Dijkstra can be backtraced from many
-// destinations — which is what reading every prefix off a lattice needs.
+// destinations, which is what reading every prefix off a lattice needs.
 struct ShortestDistance {
     std::vector<float> dist;
     std::vector<int> from;
@@ -124,7 +124,7 @@ Path best_transduction(const Wfst& a, const std::vector<Label>& input);
 // input visits. Composing each stage against the small lattice the previous
 // stage produced keeps every intermediate in the hundreds of states. That is
 // the standard lazy-composition trick, and it is also the natural home for
-// inversion — inverting a cascade reverses it and inverts each stage, which
+// inversion, inverting a cascade reverses it and inverts each stage, which
 // is just invert(A ∘ B) = invert(B) ∘ invert(A) applied down the list.
 class Cascade {
   public:
@@ -140,7 +140,7 @@ class Cascade {
     // input[0..k), and result[0] is the empty prefix.
     //
     // The classifier needs exactly this. Asking a grammar about each span of a
-    // sentence separately re-walks the same prefixes over and over — a
+    // sentence separately re-walks the same prefixes over and over, a
     // sentence with a long spelled-out numeral pays for its prefixes
     // quadratically. Composing once against an all-final input chain and
     // reading the answer off each input position collapses that to one

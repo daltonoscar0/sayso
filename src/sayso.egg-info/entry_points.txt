@@ -1,0 +1,2 @@
+[console_scripts]
+sayso-verbalise = sayso.__main__:main

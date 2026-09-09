@@ -22,3 +22,9 @@ eval/.venv/
 eval/nemo_results.tsv
 eval/generate_slice
 eval/sayso_eval
+
+# Object files
+build/
+
+# Test environment (pytest, hypothesis)
+.venv/

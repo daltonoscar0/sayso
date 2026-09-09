@@ -33,8 +33,8 @@ Wfst build_telephone() {
     // run of negative cardinals at 0.88. No value lies in both intervals.
     //
     // No date has four hyphen-joined fields, so the guard is exact. It gives
-    // up the three-group serial numbers — 751 of the shard's 4,120 telephone
-    // tokens — and keeps the 3,369 that were doing the damage.
+    // up the three-group serial numbers, 751 of the shard's 4,120 telephone
+    // tokens, and keeps the 3,369 that were doing the damage.
     return connect(concat_of({group, joined, joined, joined, closure(joined)}));
 }
 

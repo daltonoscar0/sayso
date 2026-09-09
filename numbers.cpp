@@ -108,7 +108,7 @@ Wfst build_cardinal_core(bool include_zero) {
         alternatives.push_back(concat_of(parts));
     }
 
-    // Digit-by-digit fallback for anything the grammar above cannot parse —
+    // Digit-by-digit fallback for anything the grammar above cannot parse,
     // strings longer than twelve digits, and leading-zero strings like "007".
     // Priced per digit so it never outbids a real reading of a short number.
     std::vector<Wfst> any_digit, first_digit;
@@ -381,7 +381,7 @@ Wfst year_reading(int first_century, int last_century, bool with_cardinal_fallba
     }
     if (with_cardinal_fallback) {
         // Across 2000-2009 the cardinal reading is not a fallback, it is the
-        // ordinary one — "two thousand seven" — so it costs nothing. Charging
+        // ordinary one, "two thousand seven", so it costs nothing. Charging
         // it kCardinalYearPenalty made every date carrying such a year 0.6
         // dearer, and "2007-10-19" lost to three cardinals and two minus
         // signs while "2015-10-19" stayed a date.
@@ -425,7 +425,7 @@ const Wfst& bare_number_fst() {
     // sign.
     //
     // A Roman numeral is a written-side spelling of a small integer, so it
-    // belongs here rather than in a class of its own — and being here is what
+    // belongs here rather than in a class of its own, and being here is what
     // makes it safe in both directions. ITN's spoken "two" faces "2" at the
     // margin and "II" at this penalty, so the digits win; a separate class
     // would have had to beat PLAIN instead, and could not.

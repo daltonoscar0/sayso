@@ -74,8 +74,8 @@ static void cardinal_tests() {
     check(ok, "cardinal verbalisation 0 .. 999,999,999");
 
     // A bare four-digit number in 1100-2099 is read the way a year is read.
-    // The corpus is emphatic about this — it was the single largest source of
-    // disagreement when the reading was licensed only inside a date — and the
+    // The corpus is emphatic about this, it was the single largest source of
+    // disagreement when the reading was licensed only inside a date, and the
     // cost is that a four-digit quantity in that range is read as a year too.
     check(tts(cardinal_grammar(), "1984") == "nineteen eighty-four" &&
               tts(cardinal_grammar(), "1905") == "nineteen oh five" &&

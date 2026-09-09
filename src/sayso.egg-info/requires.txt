@@ -1,0 +1,4 @@
+
+[test]
+pytest>=7
+hypothesis>=6

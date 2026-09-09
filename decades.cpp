@@ -60,7 +60,7 @@ Wfst build_decade() {
     // this grammar runs backwards: with a "10s" branch, "tens of thousands of
     // casualties" becomes "10s of thousands of casualties". The other tens
     // words are not quantifiers, so they carry no such risk. "hundreds" and
-    // "thousands" are safe for a different reason — they appear only in the
+    // "thousands" are safe for a different reason, they appear only in the
     // full form, which needs a century word in front of them.
     for (int tens = 2; tens <= 9; ++tens) {
         Wfst body = rule(digit(tens) + "0s", {kTensPlural[tens]});

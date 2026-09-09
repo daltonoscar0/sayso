@@ -127,7 +127,7 @@ static void compose_tests() {
 // pinning rather than assuming.
 static void prefix_tests() {
     // Stages must outlive the cascade, so they are named rather than
-    // temporaries — see the note on Cascade::then.
+    // temporaries, see the note on Cascade::then.
     Wfst digits = closure(union_of({rule("1", {"one"}), rule("2", {"two"}),
                                     rule("3", {"three"})}));
     Cascade counting = Cascade().then(digits);
@@ -191,7 +191,7 @@ static void connect_tests() {
     check(transduce(trimmed, "1") == "one", "connect keeps the surviving path");
 
     // survivor_of must have one entry per state of the *result*, including
-    // when nothing survives — connect returns empty_fst() there, which has one
+    // when nothing survives, connect returns empty_fst() there, which has one
     // state, not none. Leaving the vector empty made run_prefix_stages index
     // past its end on every span no grammar matched: an out-of-bounds read on
     // essentially every sentence, invisible without a sanitiser.

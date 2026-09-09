@@ -26,7 +26,7 @@ void recover_gap(const std::string& input, size_t from, size_t to,
 // Scalpel attaches a trailing full stop to a short token, on the reasonable
 // guess that it is an abbreviation: "1980s." comes back as [1980] [s.], and
 // "5 km." as [5] [km.]. A span is replaced whole, so any class claiming such a
-// token would swallow the sentence's full stop with it — and none of them can
+// token would swallow the sentence's full stop with it, and none of them can
 // claim it at all, because "1980s." is not a decade and "km." is not a unit.
 // Both were silently failing wherever they ended a sentence.
 //

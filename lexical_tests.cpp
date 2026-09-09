@@ -138,7 +138,7 @@ static void abbreviation_tests() {
           "abbreviations expand");
 
     // No trailing-stop branch: the adapter splits a final stop off a token
-    // that has no other, so "Ltd." arrives as two tokens — and a branch
+    // that has no other, so "Ltd." arrives as two tokens, and a branch
     // reading "ltd." would claim both and swallow the sentence's punctuation.
     check(tts(abbreviation_grammar(), "vol.") == "<none>",
           "a trailing full stop belongs to the sentence, not the abbreviation");

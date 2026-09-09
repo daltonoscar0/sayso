@@ -3,8 +3,8 @@
 //
 // These are grammar-level tests: each cascade is exercised on its own, so a
 // case here says what the machine can read and write, not what CLASSIFY would
-// choose. Where two classes compete for the same span — "three pounds" is
-// sterling as well as weight — the arbitration is the classifier's business
+// choose. Where two classes compete for the same span, "three pounds" is
+// sterling as well as weight, the arbitration is the classifier's business
 // and is pinned in pipeline_tests.cpp instead.
 //
 // Build:
@@ -156,7 +156,7 @@ static void fraction_tests() {
           "mixed numbers take 'and', and an article for a numerator of one");
 
     // Standing alone the numerator is "one" and only "one". "a" is offered
-    // after a whole number, where "and" precedes it — and nowhere else,
+    // after a whole number, where "and" precedes it, and nowhere else,
     // because it runs backwards: a fraction span covering the article of
     // "a nineteenth century painter" is cheaper than ORDINAL plus the
     // per-character cost of leaving "a" alone, and the article is absorbed
@@ -213,7 +213,7 @@ static void fraction_tests() {
               itn(fraction_grammar(), "one quarters") == "1/4",
           "the singular branch wins '1/4' by a margin, not by exclusion");
 
-    // Denominators run 2-20, the round tens, 32, 64, 100 and 1000 — every one
+    // Denominators run 2-20, the round tens, 32, 64, 100 and 1000, every one
     // of which has a single-word ordinal or is listed with both spellings.
     // "1/25" would need "twenty-fifths", a compound plural the hyphenator
     // cannot rebuild, so the table stops rather than guess.

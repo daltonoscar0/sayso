@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sayso"
+version = "0.2.0"
+description = "Bidirectional weighted-FST text normaliser for a speech front end"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# The grammars are C++ and have no dependencies at all. The Python package is a
+# wrapper around the compiled verbaliser, so it has none either; hypothesis is a
+# test dependency and nothing imports it outside tests/.
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7", "hypothesis>=6"]
+
+[project.scripts]
+sayso-verbalise = "sayso.__main__:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

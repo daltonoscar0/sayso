@@ -78,7 +78,7 @@ Wfst acronym_table() {
 Wfst build_letters() {
     // A letter carrying its full stop. Every path must contain at least one of
     // these, which is what keeps a bare "a" or "I" out of the grammar.
-    // Both cases, because this grammar is handed the span unfolded — see the
+    // Both cases, because this grammar is handed the span unfolded, see the
     // note on the acronym table. The spoken side is lowercase either way.
     std::vector<Wfst> dotted, bare;
     for (char c = 'a'; c <= 'z'; ++c) {
@@ -93,14 +93,14 @@ Wfst build_letters() {
 
     // Two letters minimum, and it is the sentence-final full stop that forces
     // it. Scalpel gives "the 1980s." the tokens [1980] [s] [.], and a
-    // one-letter rule reads the last two of those as a dotted initial — which
+    // one-letter rule reads the last two of those as a dotted initial, which
     // both spells out the plural of a decade and eats the sentence's full
     // stop, since a claimed span is replaced whole. "vitamin C." loses its
     // stop the same way. Requiring two letters costs the bare initial of
     // "J. Smith" and keeps every acronym.
     //
     // "U.S." and "e.g." are the ordinary shape; "U.S" merely drops the last
-    // stop, so the final letter may go bare — but only after one that did not.
+    // stop, so the final letter may go bare, but only after one that did not.
     return connect(union_of({
         concat_of({with_stop, with_stop, closure(with_stop)}),
         concat_of({with_stop, closure(with_stop),

@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/sayso/__init__.py
+src/sayso/__main__.py
+src/sayso/api.py
+src/sayso/binary.py
+src/sayso/evaluate.py
+src/sayso.egg-info/PKG-INFO
+src/sayso.egg-info/SOURCES.txt
+src/sayso.egg-info/dependency_links.txt
+src/sayso.egg-info/entry_points.txt
+src/sayso.egg-info/requires.txt
+src/sayso.egg-info/top_level.txt
+tests/test_contract.py
+tests/test_phone_cases.py
+tests/test_roundtrip.py

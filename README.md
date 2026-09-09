@@ -14,9 +14,21 @@ Input   →  "it costs twenty-five dollars and ten cents on march fourteenth twe
 ITN     →  "it costs $25.10 on 3/14/2015."
 ```
 
-Thirteen semiotic classes: `CARDINAL`, `ORDINAL`, `DECIMAL`, `FRACTION`, `MONEY`, `MEASURE`,
-`DATE`, `TIME`, `DECADE`, `RANGE`, `ABBREV`, `LETTERS`, `TELEPHONE`. Everything else passes
-through byte for byte.
+Seventeen semiotic classes: `CARDINAL`, `ORDINAL`, `DECIMAL`, `FRACTION`, `MONEY`, `MEASURE`,
+`DATE`, `TIME`, `DECADE`, `RANGE`, `ABBREV`, `LETTERS`, `TELEPHONE`, `ADDRESS`, `NAME`,
+`STATE`, `PHONE`. Everything else passes through byte for byte.
+
+The last four are what a voice needs and a page does not. They exist because a conversational
+product reads names, addresses and phone numbers aloud, and every one of those breaks on an
+abbreviation that means two things:
+
+```
+Input   →  "I read the 2nd Dr. Lee lead a live band on Reading Rd at 10:30"
+TTS     →  "I read the second Doctor Lee lead a live band on Reading Road at ten thirty"
+```
+
+`Dr.` is a doctor and `Rd` is a road in the same sentence, and neither is decided by a table.
+See [Reading the abbreviation both ways](#reading-the-abbreviation-both-ways).
 
 ```
 Input   →  "The 2.5 km run starts at 6:45 am; 3/4 of the field paid £12.50."
@@ -24,11 +36,11 @@ TTS     →  "The two point five kilometers run starts at six forty-five a m;
             three quarters of the field paid twelve pounds and fifty pence."
 
 Input   →  "St Paul's, vol 3, pp 1-10, e.g. the 1980s."
-TTS     →  "saint Paul's, volume three, pp one to ten, e g the nineteen eighties."
+TTS     →  "Saint Paul's, volume three, pp one to ten, e g the nineteen eighties."
 ```
 
-Nine of the thirteen are bidirectional. Four — `RANGE`, `ABBREV`, `LETTERS`, `TELEPHONE` —
-only speak; see
+Nine of the seventeen are bidirectional. The other eight (`RANGE`, `ABBREV`, `LETTERS`,
+`TELEPHONE`, `ADDRESS`, `NAME`, `STATE`, `PHONE`) only speak; see
 [One-directional classes](#one-directional-classes) for why that is a property of those
 classes rather than a hole in the design.
 
@@ -52,7 +64,7 @@ grammar, put the sentence back together.
                      │  std::vector<Token>
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  CLASSIFY   — a weighted FST over token boundaries           │
+│  CLASSIFY  : a weighted FST over token boundaries            │
 │                                                              │
 │    state i ──PLAIN, cost = chars(token i)──▶ state i+1       │
 │    state i ──CLASS, cost = entry + grammar(span)──▶ state j  │
@@ -64,10 +76,10 @@ grammar, put the sentence back together.
 │  Each grammar is run once per span *start*, not once per     │
 │  span: every arc leaving state i comes from one composition. │
 └────────────────────┬─────────────────────────────────────────┘
-                     │  spans: one of thirteen classes, or PLAIN
+                     │  spans: one of seventeen classes, or PLAIN
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  per-class grammar — a composition of WFSTs                  │
+│  per-class grammar: a composition of WFSTs                   │
 │                                                              │
 │    CARDINAL  (cardinal | year | roman) ∘ hyphenator          │
 │    ORDINAL   suffix-stripper ∘ cardinal ∘ (ordinaliser ∘ h.) │
@@ -83,18 +95,35 @@ grammar, put the sentence back together.
 │    LETTERS   dotted initials, acronym table ─ speaking only  │
 │    TELEPHONE digits-hyphen-digits ×4    ── speaking only     │
 │                                                              │
+│  and the four a voice needs, each of which reads its own     │
+│  context because a grammar cannot see outside its span:      │
+│                                                              │
+│    ADDRESS   [number] [dir] Name · suffix-table ── speak only│
+│    NAME      title-table · Name [· suffix]      ── speak only│
+│    STATE     Name · "," · code-table [· zip]    ── speak only│
+│    PHONE     [+1] ddd · ddd · dddd | vanity     ── speak only│
+│                                                              │
 │  Small compositions are done once at build time; the large   │
 │  ones are a Cascade, composed against the input instead.     │
 │                                                              │
 │  Every one of these is written so that a shared prefix is    │
 │  concatenated onto a union rather than into each of its      │
 │  branches: A·(B ∪ C), never A·B ∪ A·C. See "Keeping the      │
-│  grammars small" below — it is worth more than it sounds.    │
+│  grammars small" below; it is worth more than it sounds,     │
+│  and ADDRESS cost a factor of four by forgetting it.         │
 └────────────────────┬─────────────────────────────────────────┘
                      │  best path through the composed lattice
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  serialise — segment outputs, gaps copied verbatim by offset │
+│  serialise: segment outputs, gaps copied verbatim by offset  │
+└────────────────────┬─────────────────────────────────────────┘
+                     │  text, and the readings that lost
+                     ▼
+┌──────────────────────────────────────────────────────────────┐
+│  report: the pipeline contract's StageResult (--json)        │
+│    decisions[]  span, surface, result, kind, rule, score     │
+│    alternatives[]  what each decision beat, with its weight  │
+│    meta  pron_hints for the words G2P gets wrong, name_spans │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -116,9 +145,70 @@ readable. `2015-03-14` is a date and also, if you squint, three numbers and two 
 Every one of those is settled the same way: the tropical semiring makes a path's weight the
 sum of its arcs, and the answer is the cheapest path. Nothing else in the pipeline arbitrates.
 
+### Reading the abbreviation both ways
+
+`St` is `saint` 3,205 times in the corpus `ABBREV` was built from and `street` 156 times. `Dr`
+is `doctor` 1,302 times and a drive not once. A table has to pick, and picking is wrong every
+time the token is the other one. This is the ambiguity a conversational voice trips over
+hardest, because addresses and names are most of what it reads.
+
+No weight can settle it either, because the evidence is not in the token. It is in the tokens
+either side, and a Sayso grammar sees only its own span.
+
+So the fix is to make the span bigger. `ADDRESS` claims the street name in front of the
+suffix, and the house number in front of that; `NAME` claims the surname behind the title.
+That puts the context *inside* the span, where a grammar can read it, and leaves the
+classifier's lattice to price the two readings against each other exactly as it prices `MONEY`
+against `CARDINAL`.
+
+Most of the ambiguity then disappears before any weight is consulted, because the two classes
+want different word orders:
+
+| written | parses as | because |
+|---|---|---|
+| `Dr. Lee` | `NAME` → "Doctor Lee" | an abbreviation *before* a capitalised name is a title |
+| `Lee Dr` | `ADDRESS` → "Lee Drive" | an abbreviation *after* one is a street suffix |
+| `St. Helens` | `NAME` → "Saint Helens" | same rule, same direction |
+| `Wall St` | `ADDRESS` → "Wall Street" | same rule, other direction |
+
+`Dr. Lee` has no parse in the address grammar and `Lee Dr` has none in the name grammar. Where
+both do parse, one hair of weight prefers the title. Two structural constraints keep the
+classes out of ordinary prose: a street name and a surname must be **capitalised**, and an
+ambiguous suffix with no number in front of it pays for the privilege.
+
+The same shape settles the postal codes. `AR` is Arkansas in `Little Rock, AR` and the letters
+A R everywhere else, and every two-letter code is a word somewhere: `IN`, `OR`, `HI`, `ME`,
+`OK` and `PA` are all states and all something commoner. `STATE` demands the one shape only an
+address has: a capitalised place name, a comma, then the code. A bare `AR` has no parse at all.
+
+### Telling the next stage what it cannot know
+
+Expanding `AR` to `Arkansas` hands the grapheme-to-phoneme stage a word it will very likely
+mispronounce, because `Arkansas` does not rhyme with `Kansas` and nothing in the spelling says
+so. A verbaliser that replaces a token the next stage could have spelled out with one it will
+get wrong has made the sentence worse.
+
+So Sayso says what it knows. Any output word in a small curated table is reported in
+`meta.pron_hints` with its pronunciation, and the next stage may take the hint or ignore it:
+
+```json
+"pron_hints": {"Reading": {"arpabet": "R EH1 D IH0 NG", "respell": "RED-ing"}}
+```
+
+Fifty-eight entries, every one of them read out of the [CMU Pronouncing
+Dictionary](https://github.com/cmusphinx/cmudict) rather than written from memory, which was
+worth doing, since three of the first drafted from memory were wrong. `Reading` is the entry
+that makes the case: cmudict's default is the verb, `R IY1 D IH0 NG`, and the town is the
+second variant. A model handed the bare word takes the first.
+
+The list is deliberately short. Anything longer is a pronunciation dictionary, and shipping one
+of those from the text normaliser would be doing the next stage's job with none of its
+evidence. `NAME`, `ADDRESS` and `STATE` also report their spans in `meta.name_spans`, so a
+heteronym disambiguator can skip the regions where it has nothing to go on.
+
 ### One-directional classes
 
-Nine classes are read in both directions. Three are not, and the reason is worth setting out,
+Nine classes are read in both directions. Eight are not, and the reason is worth setting out,
 because it is the one place the "one grammar, read both ways" story needs a footnote.
 
 Expanding `St` to `saint` is normalisation. Contracting every `saint` back to `St` is not. The
@@ -129,13 +219,19 @@ whichever way it is pointing. Making the penalty large enough to lose in one dir
 lose it in both.
 
 So the registry carries a flag, and `classify()` skips those grammars when asked for ITN. This
-is not a second grammar and not a weakening of the rule — each machine is still written once
+is not a second grammar and not a weakening of the rule; each machine is still written once
 and still inverted for everything else. It records that a *class* is one-directional.
 
 Only classes with an English written side need it. `RANGE` joins them for a related reason:
 `5-10` spoken as "five to ten" is normalisation, but "five to ten" written as `5-10` changes
-the sentence's syntax rather than its spelling — "increased from five to ten percent" would
+the sentence's syntax rather than its spelling, "increased from five to ten percent" would
 become "increased from 5-10 percent".
+
+`ADDRESS`, `NAME` and `STATE` join for the first reason and not a new one: their written sides
+are ordinary capitalised English. Contracting every spoken `road` back to `Rd` is the `saint`
+problem again, and a caller who wants `Reading Rd` on the page wants a house style rather than
+a normalisation. `PHONE` joins because the grouping is lost in speech: "five five five, one two
+one two" is as much `5551212` as `555-1212`, and the class has no way to choose.
 
 Roman numerals are the counter-example that proves the rule. They live *inside* `CARDINAL`
 rather than in a class of their own, and there a weight does suffice: ITN's spoken "two" meets
@@ -167,16 +263,21 @@ make          # sayso + all seven test binaries
 make test     # build and run the suite
 ```
 
-Or by hand, in Scalpel's style:
+Sources compile once into `build/` and link into whatever needs them. Each binary used to name
+its own sources, which meant the library was recompiled seven times over: half an hour for a
+one-line change to one grammar. An incremental build is now a couple of seconds.
+
+The Python package wraps the compiled verbaliser and adds nothing to it:
 
 ```bash
-g++ -std=c++17 -O2 -o sayso \
-    sayso_main.cpp wfst.cpp symbols.cpp numbers.cpp money.cpp dates.cpp \
-    decimals.cpp fractions.cpp times.cpp measures.cpp decades.cpp \
-    abbrev.cpp letters.cpp ranges.cpp \
-    text.cpp classify.cpp normalizer.cpp \
-    ../Scalpel/tokenizer.cpp ../Scalpel/char_classes.cpp -I.
+pip install -e .          # needs Python 3.11
+pytest                    # the contract, the telephone cases, the round-trip properties
 ```
+
+| Tool | Version |
+|---|---|
+| Python | 3.11 (the package), 3.9 (the corpus eval's own venv) |
+| pytest, hypothesis | test dependencies only; nothing at runtime |
 
 ---
 
@@ -194,6 +295,62 @@ echo 'he finished twenty-first out of one hundred forty-three' | ./sayso normali
 ```
 ```
 he finished 21st out of 143
+```
+
+`--style phone` asks for the reading a voice gives a written form rather than the one a page
+does. Both readings are in the same machine and both stay invertible; the option moves a cost,
+it does not select a grammar.
+
+```bash
+echo 'It is $4.99 at 18:00, 1/2 mile away.' | ./sayso normalize --style phone
+echo 'It is $4.99 at 18:00, 1/2 mile away.' | ./sayso normalize --style plain
+```
+```
+It is four ninety-nine at six in the evening, half a mile away.
+It is four dollars and ninety-nine cents at eighteen hundred, one half mile away.
+```
+
+`--json` prints the pipeline contract's `StageResult`, one document per line of input: the
+output, the tokens, every non-trivial decision with the readings it beat and their weights, and
+a `meta` block carrying the pronunciation hints and name spans. This is what the Python package
+returns, and there is only one implementation of it.
+
+```bash
+python -m sayso "I read the 2nd Dr. Lee lead a live band on Reading Rd at 10:30"
+```
+```json
+{
+  "stage": "sayso",
+  "output": "I read the second Doctor Lee lead a live band on Reading Road at ten thirty",
+  "decisions": [
+    {
+      "span": [15, 22], "surface": "Dr. Lee", "result": "Doctor Lee",
+      "kind": "name", "rule": "sayso.name", "score": 0.04,
+      "alternatives": [
+        {"result": "doctor", "score": 0.05, "kind": "abbrev", "span": [15, 17]},
+        {"result": "second drive", "score": 0.05, "kind": "address", "span": [11, 17]}
+      ],
+      "note": null
+    }
+  ],
+  "meta": {
+    "pron_hints": {"Reading": {"arpabet": "R EH1 D IH0 NG", "respell": "RED-ing"}},
+    "name_spans": [[18, 28], [49, 61]]
+  }
+}
+```
+
+An alternative carries its span as well as its score, because the two only mean anything
+together: these readings cover different numbers of characters, so a cheaper one is not a
+better one. `2nd Dr` reads as `ADDRESS` "second drive" for 0.05 against `ORDINAL` "second" for
+0.1, and loses anyway, because the sentence still has to pay for `Lee` and the address reading
+has eaten the doctor.
+
+From Python:
+
+```python
+from sayso import run
+run("that will be $19.95", style="phone")["output"]   # 'that will be nineteen ninety-five'
 ```
 
 `--explain` prints the CLASSIFY tagging before the output:
@@ -229,23 +386,27 @@ Born december twenty-fifth nineteen ninety-nine, she paid three pounds.
 | `ABBREV` | `St`, `vol`, `Dr`, `vs`, `Mt`, `Ltd` | `saint`, `volume`, `doctor`, `versus` |
 | `LETTERS` | `U.S.`, `D.C.`, `e.g.`, `PDF`, `BBC` | `u s`, `d c`, `e g`, `p d f`, `b b c` |
 | `TELEPHONE` | `978-0-131-40221-8` | `nine seven eight o one three one …` |
+| `ADDRESS` | `221 Baker St`, `Reading Rd`, `5th Ave`, `E 42nd St`, `Apt 4B` | `two hundred twenty-one Baker Street`, `fifth avenue`, `apartment four B` |
+| `NAME` | `Dr. Lee`, `St. Helens`, `J.R.R. Tolkien`, `King Henry III` | `Doctor Lee`, `Saint Helens`, `J R R Tolkien`, `King Henry the third` |
+| `STATE` | `Little Rock, AR`, `Springfield, IL 62701` | `Little Rock, Arkansas`, `Springfield, Illinois six two seven oh one` |
+| `PHONE` | `(555) 121-2121`, `+1 555-121-2121`, `1-800-FLOWERS` | `five five five, one two one, two one two one`, `one, eight oh oh, F L O W E R S` |
 
 Roman numerals live inside `CARDINAL` rather than in a class of their own, because they are a
 written-side spelling of a small integer: `World War II` is `world war two`.
 
 Several of these stop short of where a table could have gone on, and always for the same
-reason — the classifier has no context, so a grammar that reads more also mis-reads more:
+reason, the classifier has no context, so a grammar that reads more also mis-reads more:
 
 - **Fraction denominators** stop at the ones with single-word ordinals.
 - **Times** have no seconds field: English has no settled way of saying one to canonicalise to.
-- **The measure table** omits every unit whose written form is an ordinary English word —
+- **The measure table** omits every unit whose written form is an ordinary English word,
   `in`, `s`, `h`, `t`, `a`. Without that, `3 in the morning` is three inches.
 - **The abbreviation table** omits every abbreviation commoner as a word. `no` expands to
   `number` 288 times in the corpus shard and is the word "no" 8,805 times, so it is out; `co`,
   `min` and `col` go with it.
 - **`LETTERS` reads dotted shapes, and a table of acronyms.** A general "two or more capitals"
-  rule is 70% right on the corpus — the other 30% being Roman numerals, acronyms English says
-  as words (`FIFA`, `NASA`), and caps-lock prose — which would make it by a wide margin the
+  rule is 70% right on the corpus, the other 30% being Roman numerals, acronyms English says
+  as words (`FIFA`, `NASA`), and caps-lock prose, which would make it by a wide margin the
   least reliable thing here. The table is the 396 all-caps types among the corpus's 400
   commonest that the reference spells out at least 95% of the time. It is also the one grammar
   that asks for the span with its case intact: `US` is an acronym and `us` is a pronoun.
@@ -263,7 +424,7 @@ out. All three counts are from the held-out corpus shard.
 
 **`VERBATIM`.** By token count it looks like the second-largest unimplemented class. It is
 four unrelated transformations wearing one label, and none survived scrutiny. `&` → "and" is
-40% of its mass and, inverted, would rewrite 189,026 ordinary "and" tokens into ampersands —
+40% of its mass and, inverted, would rewrite 189,026 ordinary "and" tokens into ampersands,
 and inversion is not optional for a bidirectional grammar. Its Greek-letter table is 91.5% a
 tokeniser artefact: whole Greek *words* shredded into letters and read out one at a time,
 against which a symbol table would have rewritten 593 English words into Greek. What remains
@@ -275,7 +436,7 @@ branch would spell out ordinary lower-case words. The dots are the only signal t
 folding, so `LETTERS` reads `U.S.` and leaves `PDF` alone.
 
 **Dialect conversion.** The reference turns `colour` into `color`, `metres` into `meters`,
-`organisation` into `organization` — 12,380 tokens across 540 types. That is not text
+`organisation` into `organization`, 12,380 tokens across 540 types. That is not text
 normalisation, and Sayso does not do it. It costs about 1% of the corpus score, and the
 [accuracy section](#on-the-real-google-tn-slice) counts it separately for that reason.
 
@@ -319,12 +480,12 @@ accumulating cheap internal decisions.
 
 Three of the newer entries are the same idiom seen from an odd angle. `kBareHourPenalty` is
 one weight leaning opposite ways in two branches, because whether a round hour is spoken
-depends on whether a meridiem follows it — and `kArticleNumeratorPenalty` does the same for
+depends on whether a meridiem follows it, and `kArticleNumeratorPenalty` does the same for
 `one half` against `and a half`. `kFoldedCasePenalty` exists because CLASSIFY folds a span's
 case before any grammar sees it, so for a unit like `°C` the folded spelling is the only one
 TTS can ever match and the canonical one the only one ITN will ever write; the weight is what
 makes the second of those true. And `kCurrencyHomographPenalty` is an ambiguity the grammars
-cannot settle at all — `three pounds` fits MONEY and MEASURE equally, so the measure reading is
+cannot settle at all, `three pounds` fits MONEY and MEASURE equally, so the measure reading is
 priced to lose the spoken form while keeping `5 lb`, which no currency writes.
 
 Two idioms recur. **Priority union by margin**: where a specific branch and a general branch
@@ -332,18 +493,79 @@ both fit, a hair of weight on the general one makes the specific one win, withou
 `difference` operation. **Canonicalisation by penalty**: several written forms map to one
 spoken form, and the cheapest written form is the one ITN produces.
 
-Where nondeterminism arises from inversion — `twenty five` against `twenty-five`, `$3` against
-`$3.00` — it is always resolved this way. Sayso never determinises; the best path does the work.
+Where nondeterminism arises from inversion (`twenty five` against `twenty-five`, `$3` against
+`$3.00`) it is always resolved this way. Sayso never determinises; the best path does the work.
 
 ---
 
 ## Accuracy
 
+Two sets of numbers, measuring different things. The telephone cases below are 306 rows
+written by hand for the conversational classes. The corpus numbers further down are 5,000
+sentences of Wikipedia normalised by Google's Kestrel, and are the only figures here that
+measure agreement with something other than Sayso's own conventions.
+
+### The telephone cases
+
+`tests/data/phone_cases.tsv`, 306 rows, at least 42 per new class, scored with
+`python -m sayso --eval`. Every expected column was written by reading the row aloud and
+writing down what came out. **None of it was generated by Sayso and then blessed**, which is
+the only way a case file can find a grammar wrong rather than agree with it, and it did: the
+first run was 87.6%, and eight of the twenty-six rows it failed were defects rather than
+disagreements. Rows whose note begins `[plain]` are scored under `--style plain`; the rest
+under `--style phone`.
+
+| class | n | accuracy |
+|---|---:|---:|
+| `ADDRESS` | 42 | 100.0% |
+| `MONEY` | 46 | 100.0% |
+| `TIME` | 44 | 100.0% |
+| `STATE` | 44 | 93.2% |
+| `FRACTION` | 44 | 88.6% |
+| `NAME` | 44 | 88.6% |
+| `PHONE` | 42 | 83.3% |
+| **all** | **306** | **93.5%** |
+
+### Failure cases
+
+All twenty rows that fail, verbatim, with one clause each on why. Six are decisions rather
+than defects and say so.
+
+| input | Sayso | wanted | why |
+|---|---|---|---|
+| `AR` | `AR` | `A R` | decision: spelling bare capitals is `LETTERS`' job and its table is corpus-derived, and adding the postal codes would break `IN`, `OR`, `ME` and `HI` as words |
+| `IN` | `IN` | `I N` | the same row, and the same reason it cannot be fixed by adding codes to a table |
+| `St Louis, MO` | `St Louis, Missouri` | `Saint Louis, Missouri` | `STATE` reads the city as a proper name and a proper name may contain `St`, so the title never gets its own span; two proper-noun classes cannot nest |
+| `3/4 cup` | `three quarters cup` | `three quarters of a cup` | only the `1/2` branch takes a following noun; the "of a" construction for plural fractions is not implemented |
+| `5/8 inch` | `five eighths inch` | `five eighths of an inch` | the same gap |
+| `1/2/26` | `half/twenty-six` | `january second twenty twenty-six` | `DATE` reads four-digit years only, so a two-digit one leaves the fraction to win the prefix |
+| `Jan 1/2` | `Jan half` | `january first to second` | a slash between two days of a named month is a range of dates, and no class reads that shape |
+| `May 1/2` | `May half` | `may first to second` | the same shape |
+| `dial 911` | `dial nine hundred eleven` | `dial nine one one` | decision: three digits are a cardinal, and a short code is only a short code in context the classifier does not have |
+| `dial 411` | `dial four hundred eleven` | `dial four one one` | the same row |
+| `extension 4412` | `extension four thousand four hundred twelve` | `extension four four one two` | decision: the digit-by-digit rule starts at seven digits, and four-digit numbers are numbers far more often than extensions |
+| `PIN 4417` | `PIN four thousand four hundred seventeen` | `PIN four four one seven` | the same rule; the keyword in front is evidence no grammar reads |
+| `ext 220` | `ext two hundred twenty` | `ext two twenty` | the same, and `ext` itself is not in the abbreviation table |
+| `555-1212 x22` | `… one two one two xtwenty-two` | `… x twenty-two` | `x22` is one token, `CARDINAL` claims the `22`, and the renderer concatenates a character to the word beside it with no space |
+| `02 555 1212` | `zero two five five five, …` | `oh two five five five, …` | a leading zero is not a North American shape, so `PHONE` declines the span and `CARDINAL` reads `02` |
+| `F. Scott Fitzgerald` | `F. Scott Fitzgerald` | `F Scott Fitzgerald` | decision: `NAME` needs two initials, because one initial in front of a capitalised name absorbs it for free and cost `$5.4 M. Central Park` its magnitude |
+| `Elizabeth II` | `Elizabeth two` | `Elizabeth the second` | decision: a regnal numeral is offered only behind a title, because `World War II` is the same shape and no weight separates them |
+| `Henry III` | `Henry three` | `Henry the third` | the same decision |
+| `Louis IV` | `Louis four` | `Louis the fourth` | the same decision |
+| `Mr. and Mrs. Smith` | `mister. and Missus Smith` | `Mister and Missus Smith` | `and` is lowercase so `NAME` cannot claim the first title, `ABBREV` expands it lowercase, and the stop is left behind as punctuation |
+
+Two patterns run through that list. Five rows want a class to read a keyword in front of a
+number (`extension`, `PIN`, `dial`) which is the contextual reranking `Next steps` has always
+described and not something a span-local grammar can do. Four are the same regnal-numeral
+decision counted four times.
+
+### The corpus slices
+
 Run `cd eval && ./generate_slice data/synthetic_slice.tsv && ./sayso_eval data/synthetic_slice.tsv` (add `--relaxed` for the second table).
 Numbers are from the 500-example synthetic slice; read the caveat below before drawing
 conclusions from the NeMo columns.
 
-### Strict scoring — exact match
+### Strict scoring: exact match
 
 | class | n | Sayso TTS | Sayso ITN | NeMo TTS | NeMo ITN |
 |---|---:|---:|---:|---:|---:|
@@ -358,7 +580,7 @@ conclusions from the NeMo columns.
 | **all** | **500** | **100.0%** | **98.8%** | **9.6%** | **7.6%** |
 
 The six ITN failures are the only place the two implementations disagree, and they disagree
-deliberately. All six are a bare clock time in the eleventh or twelfth hour — "eleven oh two" —
+deliberately. All six are a bare clock time in the eleventh or twelfth hour ("eleven oh two")
 which is also a year, and Sayso now resolves that toward the year because the corpus is
 emphatic: reading it as a time made 588 of the 1000 years in 1100-2099 fail to round-trip. A
 time keeps its meridiem, so "eleven oh two p m" is unaffected. The weight comment on
@@ -367,11 +589,11 @@ time keeps its meridiem, so "eleven oh two p m" is unaffected. The weight commen
 **Those NeMo numbers are not a quality measurement and should not be read as one.** The slice's
 reference spoken forms follow Sayso's conventions, so Sayso scores 100% on it close to by
 construction, and NeMo is penalised for every place it makes a different but equally correct
-choice — `thirty fourth` for `thirty-fourth`, `nine hundred and forty two` for
+choice, `thirty fourth` for `thirty-fourth`, `nine hundred and forty two` for
 `nine hundred forty-two`. Its ITN is also fed hyphenated text, which no speech recogniser
 produces and its grammars do not expect.
 
-### Relaxed scoring — hyphens, "and", "o"/"oh" and case folded away, ITN input de-hyphenated
+### Relaxed scoring: hyphens, "and", "o"/"oh" and case folded away, ITN input de-hyphenated
 
 | class | n | Sayso TTS | Sayso ITN | NeMo TTS | NeMo ITN |
 |---|---:|---:|---:|---:|---:|
@@ -391,26 +613,26 @@ splits into three kinds of thing, and only the third is an error.
 
 **Differences of convention**, which the folding does not reach:
 
-- **TIME TTS** — NeMo writes `five forty nine PM`, one token, where the slice has `p m`, two.
+- **TIME TTS**: NeMo writes `five forty nine PM`, one token, where the slice has `p m`, two.
   The relaxed mode folds case, so this is not a capitalisation difference; it is a real
   disagreement about whether the meridiem is one spoken word or two, and neither is wrong.
-- **FRACTION TTS** — NeMo says `eleven one hundredths` for `11/100` where the slice has
+- **FRACTION TTS**: NeMo says `eleven one hundredths` for `11/100` where the slice has
   `eleven hundredths`.
-- **CARDINAL TTS** — NeMo reads a bare `61795` digit by digit. On four-digit numbers the two
+- **CARDINAL TTS**: NeMo reads a bare `61795` digit by digit. On four-digit numbers the two
   systems now agree: Sayso reads `1880` as `eighteen eighty` too, which it did not before the
   real slice was scored.
-- **DATE TTS** — NeMo says `the second of december nineteen fifty eight`, a British
+- **DATE TTS**: NeMo says `the second of december nineteen fifty eight`, a British
   day-first reading. Correct English, different from the slice's reference.
 
 **Things NeMo's inverse normaliser does not attempt.** Every 0.0% in the ITN column is one of
 these, not a wrong answer:
 
-- **DATE ITN** — writes `october 1 1975`; it does not reassemble a spoken date into a numeric
+- **DATE ITN**: writes `october 1 1975`; it does not reassemble a spoken date into a numeric
   written form at all.
-- **TIME ITN** — writes `1102` for `eleven oh two`, reading the words as a cardinal rather
+- **TIME ITN**: writes `1102` for `eleven oh two`, reading the words as a cardinal rather
   than a clock time.
-- **FRACTION ITN** — leaves `fifty-two tenths` untouched.
-- **MONEY ITN** — writes `54942 pounds` rather than `£54942`; it does not map a currency word
+- **FRACTION ITN**: leaves `fifty-two tenths` untouched.
+- **MONEY ITN**: writes `54942 pounds` rather than `£54942`; it does not map a currency word
   back to its symbol.
 
 **Coverage gaps**, where NeMo does attempt the class and comes up short: it leaves `MB`
@@ -418,22 +640,43 @@ unexpanded in `797 MB`, and turns `three thousand nine hundred sixty-nine centim
 `3900 sixty-nine centimeters`.
 
 The fair summary is unchanged from when this comparison covered four classes: Sayso
-canonicalises harder in the ITN direction — numeric dates and times, currency symbols, no
-thousands separators — because that is what its weighting scheme is for, and NeMo covers far
+canonicalises harder in the ITN direction, numeric dates and times, currency symbols, no
+thousands separators, because that is what its weighting scheme is for, and NeMo covers far
 more of English than twelve semiotic classes.
 
 ### Throughput
 
 Single-threaded, `-O2`, Apple M-series, machine otherwise idle. Both rows are medians of four
 runs, alternating between the two builds over the *same* 500-sentence slice, because absolute
-figures on a laptop move by a factor of two with thermal state and background load — measure
+figures on a laptop move by a factor of two with thermal state and background load, measure
 them against each other in one sitting or not at all:
 
 | | classes | cold, every sentence novel | warm, span cache populated |
 |---|---:|---:|---:|
 | four-class build | 4 | 262/s | 62,500/s |
 | eight-class build | 8 | 283/s | 76,700/s |
-| this build | **13** | **217/s** | **78,000/s** |
+| thirteen-class build | 13 | 217/s | 78,000/s |
+
+The four conversational classes cost throughput, and the four rows above cannot be compared
+with a fifth measured months later, so here is the pair measured back to back in one sitting on
+a loaded laptop. Only the ratio means anything:
+
+| | classes | cold | warm |
+|---|---:|---:|---:|
+| thirteen-class build | 13 | 56/s | 7,970/s |
+| this build | **17** | **43/s** | **6,634/s** |
+
+Cold is 0.77× and warm 0.83×. That is the price of four classes that read spans of ordinary
+capitalised English, which the boundary prefilter cannot rule out the way it rules a currency
+grammar out of a span beginning with a digit: almost every capitalised word in a sentence is a
+span `ADDRESS` and `NAME` have to be asked about.
+
+It was very much worse first. Both classes were originally written with one branch per table
+entry, one per street suffix, one per title, and each branch carried its own copy of the
+capitalised-word machine and of the cardinal machine behind the house number. A corpus pass
+went from three minutes to over an hour. Unioning the tables *before* concatenating the shared
+machinery onto them, which is the trick `money.cpp` already used on its currency tails, gave
+back a factor of four and changed nothing about what the grammars accept.
 
 More than three times the semiotic classes for 17% off the cold path, and the warm path 25%
 faster than it was with four. Most of that cold-path cost is not the grammars: it is the
@@ -441,7 +684,7 @@ written span cap going from eight tokens to ten, which a five-group ISBN needs. 
 classes are what it bought.
 
 All three rows are medians of four runs, taken in one session, alternating between the builds
-over the same slice — which is the only way these numbers mean anything. Measured piecemeal
+over the same slice, which is the only way these numbers mean anything. Measured piecemeal
 they are worthless: an earlier attempt at the middle row was taken while a background job was
 running and came out 40% low, which nearly cost a feature that was not in fact slow.
 
@@ -454,8 +697,8 @@ their shared prefixes.
 
 That second one is why the span caps can be generous. Cost grows with the longest span a
 grammar can actually match, not with the cap, so raising the spoken cap from 16 to 24
-tokens — enough to hold `nine hundred ninety nine billion ... dollars and ninety nine cents`
-unhyphenated, which is what a speech recogniser hands you — cost nothing measurable.
+tokens, enough to hold `nine hundred ninety nine billion ... dollars and ninety nine cents`
+unhyphenated, which is what a speech recogniser hands you, cost nothing measurable.
 
 Two more changes came in with the new classes, and between them they are why the count could
 double while the clock went the other way.
@@ -465,7 +708,7 @@ double while the clock went the other way.
 Concatenation distributes over union: `A·B ∪ A·C` and `A·(B ∪ C)` accept the same strings with
 the same weights. Written the first way, a grammar holds one copy of `A` per branch. Written
 the second way, it holds one. When `A` is the cardinal machine and the branches are thirty-odd
-measure units, or the seven tails a currency amount can take, that is not a detail — it is
+measure units, or the seven tails a currency amount can take, that is not a detail; it is
 most of what the grammar costs to compose against a span.
 
 The measure grammar was written the first way to begin with. The currency grammar had been
@@ -480,7 +723,7 @@ machine, microseconds per span:
 
 About threefold in both directions, on what was half the cost of a cold sentence.
 
-Where every grammar stands now — same conditions, variance under two percent:
+Where every grammar stands now, same conditions, variance under two percent:
 
 | | MONEY | DATE | MEASURE | FRACTION | DECIMAL | TIME | ORDINAL | CARDINAL |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -493,8 +736,8 @@ costs nothing measurable.
 
 Two smaller identities do the same work elsewhere. An optional sign is concatenated onto the
 grammar rather than distributed over three copies of it. And `reweight` may be moved inside a
-concatenation — it prepends a single epsilon arc, and the tropical semiring sums along a path,
-so the cost lands on the same total wherever it sits — which is what lets a penalised branch
+concatenation, it prepends a single epsilon arc, and the tropical semiring sums along a path,
+so the cost lands on the same total wherever it sits, which is what lets a penalised branch
 share its prefix with an unpenalised one instead of duplicating it.
 
 The remaining changes are in the classifier's span cache. It holds every class's answers under
@@ -505,11 +748,11 @@ the warm path costs once the grammars are all cache hits.
 And it stores, for each class, only as far as the last prefix that class actually read. The
 overwhelming majority of (span, class) pairs match nothing at all, and a full-length vector of
 misses for every one of them was 99.95% of what the cache held: **4.58 GB of resident memory
-over thirty thousand lines of corpus, against 0.13 GB now** — with the warm path slightly
+over thirty thousand lines of corpus, against 0.13 GB now**, with the warm path slightly
 faster for the better locality. The map is also capped, since nothing trimmed it and a
 long-lived process would have grown without bound on novel text.
 
-DATE is the most expensive grammar per span — 1.9 ms against MONEY's 0.6 — and for a while
+DATE is the most expensive grammar per span, 1.9 ms against MONEY's 0.6, and for a while
 this file said it was therefore about half of what a cold sentence costs. That was wrong, and
 worth recording as wrong: a per-span benchmark measures only the spans that reach a grammar,
 and the FIRST/LAST prefilters answer for DATE on nearly all of them. A sampling profile puts
@@ -520,27 +763,55 @@ Two obvious follow-ons were tried and reverted: an open-addressed replacement fo
 which removed the per-state allocation the profile pointed at, and a flat table for interning
 ASCII characters. Neither moved the wall clock outside run-to-run noise, so neither shipped.
 Weighted determinisation of the date grammar, long listed here as the next step, would buy
-nothing either — its premise was the same wrong claim.
+nothing either; its premise was the same wrong claim.
 
 ### On the real Google TN slice
 
 Everything above is the synthetic slice. This is 5,000 sentences of Wikipedia from
-`output-00099-of-00100` — a held-out *test* shard, per the dataset's own split — normalised by
+`output-00099-of-00100`, a held-out *test* shard per the dataset's own split, normalised by
 Google's Kestrel and used as the reference. It is the only number here that measures agreement
 with something other than Sayso's own conventions.
 
-**TTS 93.9%**, with `--date-order preserve`. Three slices, and the third is the one that
-matters:
+**TTS 93.9%**, with `--preserve-date-order`. Three slices, and the third is the one that
+matters. The four conversational classes were added after these numbers were first taken, so
+both columns are here: `before` is the thirteen-class build at `main`, `after` is this one,
+each run on the same slices in the same sitting.
 
-| slice | TTS |
-|---|---:|
-| shard 00099, the 5,000 sentences developed against | 93.9% |
-| shard 00099, a disjoint 5,000 from later in the file | 93.9% |
-| **shard 00098, a different shard, downloaded after every weight was fixed** | **93.6%** |
+| slice | before | after |
+|---|---:|---:|
+| shard 00099, the 5,000 sentences developed against | 93.9% | 93.9% |
+| shard 00099, a disjoint 5,000 from later in the file | 93.9% | **94.0%** |
+| **shard 00098, a different shard, downloaded after every weight was fixed** | **93.6%** | **93.6%** |
+
+No regression on any slice, and a tenth of a point on the held-out one. Per class, on the
+shard the numbers are supposed to be believed on:
+
+| class | n | before | after |
+|---|---:|---:|---:|
+| CARDINAL | 989 | 86.9% | 86.9% |
+| DATE | 3,746 | 96.1% | 96.2% |
+| DECIMAL | 44 | 72.7% | 72.7% |
+| FRACTION | 3 | 66.7% | 66.7% |
+| MEASURE | 75 | 88.0% | 88.0% |
+| MONEY | 50 | 78.0% | 78.0% |
+| ORDINAL | 86 | 87.2% | 87.2% |
+| TELEPHONE | 3 | 0.0% | 0.0% |
+| TIME | 4 | 100.0% | 100.0% |
+| **all** | **5,000** | **93.6%** | **93.6%** |
+
+The movement is all on the other two slices and all in `ORDINAL`, which gains 2.2 points on
+shard 00099 and 5.6 on the held-out one: `ADDRESS` reads `5th Ave` and `E 42nd St` as numbered
+streets, and those were ordinals the classifier used to split. `CARDINAL` gives back two tenths
+of a point on shard 00099 for the same reason and in the other direction.
+
+That the corpus barely moves is the expected result and not a disappointing one. Wikipedia is
+not a phone call: it has almost no addresses written as addresses, no phone numbers, and no
+prices a voice would elide. The classes were built for traffic this corpus does not carry, and
+the thing to check was that they stay out of the way of the traffic it does. They do.
 
 Three tenths of a point across an unseen shard is what no overfitting looks like. It was not
 always so: under the default `--date-order canonical` the same three slices give 68.8%, 65.9%
-and about the same, and that 2.9-point gap was almost entirely DATE — the class the option
+and about the same, and that 2.9-point gap was almost entirely DATE, the class the option
 fixes. Getting the dates right removed the overfitting along with the errors.
 
 Two caveats belong with that number. It is measured on sentences whose semiotic content Sayso
@@ -567,11 +838,11 @@ How it got there, each step measured on the same slice:
 |---|---:|
 | four classes, year reading licensed only inside a date | 40.0% |
 | a bare four-digit number reads as a year | 62.8% |
-| the written shapes a corpus uses — `$26.6bn`, `2½`, `10am`, `18:00`, `Jun 29` | 64.3% |
+| the written shapes a corpus uses, `$26.6bn`, `2½`, `10am`, `18:00`, `Jun 29` | 64.3% |
 | `DECADE`, `RANGE`, `ABBREV`, `LETTERS`, Roman numerals, sentence-final full stops | **68.8%** |
 
 **The ITN column is not reported here, because it would not mean anything.** The corpus has no
-canonical-written column, so ITN can only be scored against the written one — and that column
+canonical-written column, so ITN can only be scored against the written one, and that column
 is natural prose, where "scoring three goals" leaves "three" a word. Nothing in the spoken
 input says which numbers Wikipedia chose to spell out, so the number measures conformance to a
 house style rather than normalisation. `eval/README.md` raises the caveat; this is its sharpest
@@ -581,8 +852,8 @@ Categorising all 1,567 remaining TTS mismatches:
 
 | count | cause |
 |---:|---|
-| 1,318 | **day-first spoken dates** — Kestrel says "the twenty-eighth of february twenty sixteen" |
-| 52 | British→American spelling — `harbour`→`harbor`, `organisation`→`organization` |
+| 1,318 | **day-first spoken dates**, Kestrel says "the twenty-eighth of february twenty sixteen" |
+| 52 | British→American spelling, `harbour`→`harbor`, `organisation`→`organization` |
 | 2 | bare all-caps acronyms |
 | 198 | a long tail: possessives, `/` inside names, bare `June 20` ordinalised, citation colons |
 
@@ -593,12 +864,12 @@ Matching Kestrel would be worth roughly another 26 points and would cost that pr
 `docs/DECISIONS.md` records the trade with the number attached. Without it, the ceiling on this
 slice is 95.0%.
 
-The next two rows are out of scope by decision, not by omission — see
+The next two rows are out of scope by decision, not by omission, see
 [What is deliberately absent](#what-is-deliberately-absent). Only the last row is a to-do list,
 and it is now a long tail rather than a short list of missing classes.
 
 Two harness changes were needed before any of this was measurable. Kestrel marks punctuation
-`sil` — written but not spoken — so the reference spoken column has none, while Sayso copies
+`sil` (written but not spoken) so the reference spoken column has none, while Sayso copies
 punctuation through verbatim, which is what a TTS front end must do. Compared naively, every
 class scored 0.0% with almost every sentence failing on a comma; relaxed scoring now drops
 standalone punctuation from both sides. And `--errors=N` prints every mismatch rather than ten,
@@ -607,7 +878,7 @@ because ten samples tell you a pattern exists and never how often.
 ### Reproducing the NeMo columns
 
 `eval/nemo_compare.py` scores NVIDIA NeMo on the same slice, in the same shape, and writes
-per-example outputs to `nemo_results.tsv`. Getting NeMo installed took three attempts — it
+per-example outputs to `nemo_results.tsv`. Getting NeMo installed took three attempts, it
 pins `pynini==2.1.6.post1`, which needs OpenFst **1.8.3** specifically, and PyPI has no arm64
 wheel for it. The route that worked and the two that did not are written up in
 [`eval/README.md`](eval/README.md).
@@ -617,11 +888,11 @@ wheel for it. The route that worked and the two that did not are written up in
 `eval/data/google_tn_slice.tsv` is meant to hold a 500-example slice of the Google text
 normalisation dataset. It is not distributed here. When it is absent,
 `eval/generate_slice.cpp` writes a synthetic slice in its place, whose spoken side comes from
-a small reference verbaliser written as ordinary arithmetic and string concatenation — *not*
+a small reference verbaliser written as ordinary arithmetic and string concatenation, *not*
 from the transducers under test, which would score 100% and measure nothing.
 
 So Sayso's numbers measure agreement between two independent implementations of the same
-conventions — 100% one way and 98.8% the other, the gap being the six deliberate
+conventions, 100% one way and 98.8% the other, the gap being the six deliberate
 disagreements described above. They do not measure agreement with the Google TN dataset's conventions, and they
 are why the NeMo comparison has to be read with the care set out above.
 
@@ -634,8 +905,12 @@ that section.
 
 ## Testing
 
+Two suites. The C++ one tests the grammars and the classifier; the Python one tests the
+contract the rest of the front end is written against.
+
 ```bash
-make test
+make test     # 210 C++ tests, no dependencies
+pytest        # 43 Python tests: the contract, the telephone cases, the properties
 ```
 
 ```
@@ -650,7 +925,7 @@ make test
 
 210 tests. The grammar suites test a cascade on its own, so a case there says what a machine
 can read and write; where two classes want the same span, the arbitration is the classifier's
-and lives in `pipeline_tests` instead — as does whether a one-directional class is offered at
+and lives in `pipeline_tests` instead, as does whether a one-directional class is offered at
 all in ITN, which is a property of the registry rather than of any grammar.
 
 A good number of these tests exist because a corpus found the bug first. The ones that pin a
@@ -662,8 +937,22 @@ Each grammar is held to a round-trip property over seeded random input:
 `itn(tts(n)) == n` for integers and ordinals, for amounts in cents, for dates; and
 `tts(itn(s)) == s` for well-formed spoken forms, which is the property that pins the
 *canonical* spoken form rather than merely a readable one. The property harness
-(`property.h`) is about eighty lines — a seeded xorshift generator and a shrinker — so the
+(`property.h`) is about eighty lines (a seeded xorshift generator and a shrinker) so the
 test build has the same zero-dependency story as the library.
+
+On the Python side, `tests/test_contract.py` checks the shape of a `StageResult` against the
+pipeline contract, that the demo sentence verbalises exactly, and that the four decisions it is
+supposed to record are there with the paths they beat. `tests/test_phone_cases.py` scores the
+306 hand-checked rows against a floor per class. `tests/test_roundtrip.py` runs hypothesis over
+the invertible classes.
+
+One of those properties is weaker than it looks and says so in its own docstring. A bare clock
+time is asserted to keep its *digits*, not its colon, because "twelve thirty" written back is
+`1230`: read backwards a clock and a year are the same words, `TIME` therefore enters dearer
+than `CARDINAL`, and 588 years used to fail to round-trip before it did. The property was
+written strict, failed on `11:01`, and the failure turned out to be the trade `weights.h`
+already documents rather than anything the new classes broke, which is what a property test is
+for.
 
 ---
 
@@ -683,16 +972,31 @@ sayso/
 ├── dates.h/.cpp            # canonical date grammar + written-format normalisers
 ├── times.h/.cpp            # clock-time grammar
 ├── decades.h/.cpp          # decade grammar
-├── ranges.h/.cpp           # numeric ranges          — speaking only
-├── abbrev.h/.cpp           # lexical abbreviations   — speaking only
-├── letters.h/.cpp          # dotted acronyms         — speaking only
+├── ranges.h/.cpp           # numeric ranges          - speaking only
+├── abbrev.h/.cpp           # lexical abbreviations   - speaking only
+├── letters.h/.cpp          # dotted acronyms         - speaking only
+├── telephone.h/.cpp        # hyphen-joined serials   - speaking only
+├── style.h                 # the one option a caller has: a page's reading or a voice's
+├── proper.h/.cpp           # the capitalised-word machinery ADDRESS, NAME and STATE share
+├── addresses.h/.cpp        # street addresses        - speaking only
+├── names.h/.cpp            # titles, initials, suffixes - speaking only
+├── states.h/.cpp           # postal codes, and the pronunciation-hint table - speaking only
+├── phones.h/.cpp           # telephone numbers       - speaking only
 ├── classify.h/.cpp         # CLASSIFY: the token-span lattice
 ├── text.h/.cpp             # Scalpel bridge and offset repair
 ├── normalizer.h/.cpp       # the pipeline, end to end
+├── report.h/.cpp           # the pipeline contract's StageResult, as JSON
 ├── property.h              # seeded property-test harness with shrinking
 ├── sayso_main.cpp          # CLI
 ├── *_tests.cpp             # seven test binaries
 ├── docs/DECISIONS.md       # every design call, with its alternative and rationale
+├── src/sayso/              # the Python package; a wrapper, not a second implementation
+│   ├── api.py                # run(text, style="phone") -> StageResult
+│   ├── __main__.py           # python -m sayso "text", and --eval
+│   ├── evaluate.py           # the telephone cases, scored
+│   └── binary.py             # finds the compiled verbaliser, and builds it once if absent
+├── tests/                  # pytest: the contract, the cases, the round-trip properties
+│   └── data/phone_cases.tsv  # 306 rows, hand-checked, not generated
 └── eval/
     ├── eval_main.cpp         # accuracy both directions, per class, throughput
     ├── generate_slice.cpp    # synthetic slice, from an independent verbaliser
@@ -708,14 +1012,14 @@ sayso/
   ambiguity genuinely needs it. `I second the motion` becomes `I 2nd the motion`, because
   nothing in a finite-state grammar can tell the ordinal from the verb. The natural shape is
   to have CLASSIFY emit an n-best lattice rather than a single best path, and rerank it with a
-  contextual model — which keeps the grammars as the source of what is *possible* and lets the
+  contextual model, which keeps the grammars as the source of what is *possible* and lets the
   model choose only among things that already are.
 - **More semiotic classes.** Eight were added after the first four, and none of them needed
-  anything new from the engine or CLASSIFY — which was the architecture's claim, now tested.
+  anything new from the engine or CLASSIFY, which was the architecture's claim, now tested.
   What is left is `TELEPHONE`, `ADDRESS` and `ELECTRONIC`: 1.9% of semiotic tokens between
   them, and a different shape entirely, since the corpus spells a URL out character by
   character with a `_letter` suffix on each. `TELEPHONE` is the one worth having, and not for
-  its own sake — it is the class that would stop `RANGE` mis-reading an ISBN.
+  its own sake; it is the class that would stop `RANGE` mis-reading an ISBN.
 - **Bare all-caps acronyms, if CLASSIFY ever sees case.** `LETTERS` reads dotted shapes only
   because spans are case-folded before a grammar sees them. Giving the classifier the
   unfolded span alongside the folded one would unlock the largest single shape in the data.
@@ -723,8 +1027,8 @@ sayso/
   made lightly.
 - **Optional written-format output, which is now the biggest single win available.** ITN
   canonicalises hard: every spoken date becomes `M/D/YYYY`, and every written date is spoken
-  month-first. That second half is 84% of everything the corpus still disagrees with — 1,318
-  of 1,567 mismatches — because Kestrel preserves written order in speech and Sayso does not.
+  month-first. That second half is 84% of everything the corpus still disagrees with, 1,318
+  of 1,567 mismatches, because Kestrel preserves written order in speech and Sayso does not.
   Making the format a runtime parameter, defaulting to today's behaviour, would let a caller
   ask for the order-preserving reading without giving up the property that one spoken form
   round-trips to one written form. The penalties are already isolated in `weights.h`; moving

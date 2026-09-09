@@ -79,7 +79,47 @@ const std::vector<Meridiem>& meridiems() {
     return table;
 }
 
-Wfst build_time() {
+// Which part of the day an hour belongs to, for the twenty-four-hour clock
+// read as a voice reads it.
+//
+// The boundaries are a judgement and not a fact: five in the afternoon is
+// evening to some speakers and afternoon to more of them, and midnight's hour
+// is "at night" rather than "in the morning" however the arithmetic goes. What
+// the boundaries must not be is surprising, so they are the ordinary ones.
+std::vector<std::string> part_of_day(int hour) {
+    if (hour == 0) return {"at", "night"};
+    if (hour < 12) return {"in", "the", "morning"};
+    if (hour < 18) return {"in", "the", "afternoon"};
+    return {"in", "the", "evening"};
+}
+
+// "18:00" -> "six in the evening", under Style::Phone.
+//
+// Offered only for the hours a twenty-four-hour clock alone can write -- 00 and
+// 13 to 23. "09:30" is the same string on both clocks, so there is nothing in
+// it to say the speaker meant the morning, and guessing would be a reading
+// invented rather than read.
+Wfst spoken_clock(float cost) {
+    std::vector<Wfst> branches;
+    for (int h : {0, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23}) {
+        int civil = h == 0 ? 12 : h - 12;
+        Wfst hour = rule(two_digits(h), cardinal_words(civil));
+        std::vector<std::string> tail = part_of_day(h);
+        // A round hour says nothing where the minutes would go: "six in the
+        // evening", not "six o'clock in the evening".
+        std::vector<Wfst> minutes{concat_of({chars_in(":00"), words_out(tail)})};
+        for (int m = 1; m <= 9; ++m)
+            minutes.push_back(concat_of({chars_in(":"), rule(two_digits(m), {"oh", kUnits[m]}),
+                                         words_out(tail)}));
+        for (int m = 10; m <= 59; ++m)
+            minutes.push_back(concat_of({chars_in(":"), rule(two_digits(m), cardinal_words(m)),
+                                         words_out(tail)}));
+        branches.push_back(concat_of({hour, union_of(minutes)}));
+    }
+    return reweight(union_of(branches), cost);
+}
+
+Wfst build_time(Style style) {
     // Standing alone, a round hour is "o'clock" on a twelve-hour clock and
     // "hundred" on a twenty-four-hour one; before a meridiem it is not said at
     // all. Three weights, leaning differently in each branch.
@@ -105,6 +145,11 @@ Wfst build_time() {
     Wfst bare_hour = reweight(civil_hours(), kOmittedMinutePenalty);
 
     std::vector<Wfst> branches{civil, military};
+    // Free when a voice is asked for, and dear otherwise, so that a page still
+    // reads "18:00" as "eighteen hundred". Both readings stay in the machine
+    // and both stay invertible either way.
+    branches.push_back(spoken_clock(
+        style == Style::Phone ? 0.0f : kSpokenClockPenalty));
     for (const Meridiem& m : meridiems()) {
         Wfst tail = concat_of({separator, chars_in(m.written, m.cost),
                                words_out(m.spoken)});
@@ -117,10 +162,12 @@ Wfst build_time() {
 
 }  // namespace
 
-const Cascade& time_grammar() {
-    static const Wfst core = build_time();
-    static const Cascade grammar = Cascade().then(core);
-    return grammar;
+const Cascade& time_grammar(Style style) {
+    static const Wfst plain_core = build_time(Style::Plain);
+    static const Wfst phone_core = build_time(Style::Phone);
+    static const Cascade plain = Cascade().then(plain_core);
+    static const Cascade phone = Cascade().then(phone_core);
+    return style == Style::Phone ? phone : plain;
 }
 
 }  // namespace sayso

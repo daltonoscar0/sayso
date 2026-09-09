@@ -81,8 +81,8 @@ Wfst day_field() {
     return hyphenated(union_of(days));
 }
 
-// Speech pairs a year's digits — "nineteen ninety-nine", "nineteen hundred",
-// "nineteen oh five" — except in the 2000s, where the cardinal reading wins.
+// Speech pairs a year's digits, "nineteen ninety-nine", "nineteen hundred",
+// "nineteen oh five", except in the 2000s, where the cardinal reading wins.
 // The machine itself lives in numbers.cpp, because the cardinal grammar offers
 // the same reading for a bare four-digit span and a second copy would drift.
 // A date's year field takes the whole range and keeps the cardinal fallback,
@@ -142,7 +142,7 @@ Wfst month_name_format() {
 }
 
 // "14 march 2015" -> "3/14/2015". The day is written before the month and
-// spoken after it, so the machine holds the day in its state — 31 values,
+// spoken after it, so the machine holds the day in its state, 31 values,
 // one copy of the month-name machine each.
 Wfst day_first_format() {
     std::vector<Wfst> days;
@@ -196,7 +196,7 @@ Wfst mark_day_first(const Wfst& format) {
 }
 
 // The two formats that write the day before the month. Kestrel speaks both of
-// them day first — an ISO date included, which is not obvious until you read
+// them day first, an ISO date included, which is not obvious until you read
 // the data.
 Wfst build_formats() {
     return connect(union_of({
@@ -223,7 +223,7 @@ Wfst drop_marker() {
 
 // "3/14/2015" -> "14/3/2015", holding the month in the machine's state. Twelve
 // values of a one- or two-character field, which is the cheap side of the
-// reordering — the same reasoning that put the day in day_first_format().
+// reordering, the same reasoning that put the day in day_first_format().
 Wfst swap_month_and_day() {
     std::vector<Wfst> months;
     for (int m = 1; m <= 12; ++m) {
@@ -275,8 +275,8 @@ const Cascade& date_grammar(DateSpeech speech) {
     static const Wfst preserved_orientation = reorient();
 
     // Two speaking machines, not one shared. The day-first branch is
-    // unreachable under Canonical — the orientation stage has already dropped
-    // its marker — but a machine does not know that, and composition would
+    // unreachable under Canonical, the orientation stage has already dropped
+    // its marker, but a machine does not know that, and composition would
     // explore it on every span. Each mode carries only what it can reach.
     static const Wfst month_first_only = connect(canonical_date());
     static const Wfst either_order =
