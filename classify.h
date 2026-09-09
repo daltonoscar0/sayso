@@ -11,19 +11,21 @@
 // cheap to claim.
 //
 // Both directions use the same lattice. Only the orientation of the class
-// grammars changes — written->spoken for TTS, invert() of the very same
+// grammars changes, written->spoken for TTS, invert() of the very same
 // machines for ITN.
 #include <string>
 #include <vector>
 
 #include "../Scalpel/token.h"
 #include "dates.h"
+#include "style.h"
 #include "wfst.h"
 
 namespace sayso {
 
 enum class SemioticClass {
-    PLAIN, CARDINAL, ORDINAL, DECIMAL, FRACTION, MONEY, MEASURE, DATE, TIME, DECADE, ABBREV, LETTERS, RANGE, TELEPHONE
+    PLAIN, CARDINAL, ORDINAL, DECIMAL, FRACTION, MONEY, MEASURE, DATE, TIME, DECADE, ABBREV, LETTERS, RANGE, TELEPHONE,
+    ADDRESS, STATE, PHONE, NAME
 };
 const char* class_name(SemioticClass c);
 
@@ -38,11 +40,26 @@ struct Segment {
     float cost = 0.0f;
 };
 
+// One reading a grammar offered for one span, whether or not it won.
+//
+// CLASSIFY weighs every (span, class) pair it can parse and keeps the cheapest
+// cover of the sentence; the rest are discarded on the way out. They are what
+// the pipeline contract calls `alternatives`, and they exist nowhere but inside
+// the lattice, so classify() hands them back when asked. The costs are the same
+// ones that did the deciding, which is the only reason a caller can rank them.
+struct Reading {
+    SemioticClass type = SemioticClass::PLAIN;
+    size_t begin = 0, end = 0;  // token indices, half-open
+    size_t start_byte = 0, end_byte = 0;
+    std::string output;
+    float cost = 0.0f;
+};
+
 // A class grammar, always oriented written->spoken; classify() applies the
 // cascade in reverse when asked for ITN.
 //
 // `speaking_only` marks the classes that must not be read backwards. This is
-// not a second grammar and not a weakening of the one-grammar rule — the
+// not a second grammar and not a weakening of the one-grammar rule, the
 // machine is still written once and still inverted for everything else. It
 // records that a *class* is one-directional: expanding "St" to "saint" is
 // normalisation, contracting "saint" to "St" is not, and no weight can express
@@ -64,23 +81,29 @@ struct Grammar {
     // side is lowercase by construction and almost every written form Sayso
     // produces has no letters in it. LETTERS is the exception: "US" is an
     // acronym and "us" is a pronoun, and nothing but the capital tells them
-    // apart. It is one flag rather than a second pipeline — the same span,
+    // apart. It is one flag rather than a second pipeline, the same span,
     // interned twice.
     bool wants_case = false;
 };
-// The registry depends on the date option, which selects one of two date
-// cascades. Everything else in it is shared.
+// The registry depends on the date option and the style option, each of which
+// selects between two cascades that share their machinery. Everything else in
+// it is shared across all four.
 const std::vector<Grammar>& grammars(
-    DateSpeech speech = DateSpeech::Canonical);
+    DateSpeech speech = DateSpeech::Canonical, Style style = Style::Plain);
 
+// `considered`, when given, receives every reading the lattice weighed, in the
+// order they were offered. Collecting them costs a copy per candidate arc and
+// is off by default, since the pipeline never wants them.
 std::vector<Segment> classify(const std::string& input,
                               const std::vector<Token>& tokens, Direction dir,
-                              DateSpeech speech = DateSpeech::Canonical);
+                              DateSpeech speech = DateSpeech::Canonical,
+                              Style style = Style::Plain,
+                              std::vector<Reading>* considered = nullptr);
 
 // Longest span, in tokens, a class may claim. The two directions differ by a
 // lot. The longest written span is "$1,234,567.89" at eight tokens. The
 // longest spoken one is a spelled-out amount, and its length depends on
-// whether its compounds are hyphenated — speech recognisers do not hyphenate,
+// whether its compounds are hyphenated, speech recognisers do not hyphenate,
 // so ITN sees the long form: "nine hundred ninety nine billion ... nine
 // hundred ninety nine dollars and ninety nine cents" is twenty-four tokens.
 //
