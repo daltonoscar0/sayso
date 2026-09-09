@@ -1,7 +1,7 @@
 # Evaluation
 
 Everything in this directory is development tooling. Nothing here is compiled into, linked
-against, or imported by the Sayso library or CLI — those have no dependencies at all, and this
+against, or imported by the Sayso library or CLI, those have no dependencies at all, and this
 is the only place a dependency is permitted to exist.
 
 ## Running it
@@ -32,7 +32,7 @@ Three real slices sit side by side in `data/`, and the third is the one that mea
 
 | file | what it is |
 |---|---|
-| `google_tn_slice.tsv` | 5,000 sentences from shard 00099 — the slice the grammars were developed against |
+| `google_tn_slice.tsv` | 5,000 sentences from shard 00099, the slice the grammars were developed against |
 | `heldout_slice.tsv` | 5,000 more from later in the same shard, never read while developing |
 | `shard98_slice.tsv` | 5,000 from shard 00098, a different shard fetched after every weight was fixed |
 
@@ -48,7 +48,7 @@ The fourth column is optional and exists because **inverse normalisation is only
 a canonical written form**. "march fourteenth twenty fifteen" is written `3/14/2015`,
 `2015-03-14`, `March 14, 2015` and `14 March 2015`; Sayso reads all four and writes the first.
 Scoring ITN against whichever form a corpus happened to use measures format preference, not
-accuracy — on an early run that alone put DATE at 24%, with every single "error" being a
+accuracy, on an early run that alone put DATE at 24%, with every single "error" being a
 correctly normalised date in the wrong format. Where the column is present, ITN is scored
 against it. Where it is absent, ITN is scored against the written column and the report says
 so on its first line.
@@ -68,7 +68,7 @@ To use it:
    python3 convert_google_tn.py output-00000-of-00100 > data/google_tn_slice.tsv
    ```
 
-   The raw format is one *token* per line — `semiotic-class <TAB> before <TAB> after`, with
+   The raw format is one *token* per line, `semiotic-class <TAB> before <TAB> after`, with
    `<eos>` marking sentence ends, `<self>` meaning "unchanged" and `sil` meaning "not spoken"
    (which is what punctuation is). The script reassembles sentences and keeps only those whose
    semiotic content Sayso implements, reporting on stderr how many it dropped and why. Scoring
@@ -86,7 +86,7 @@ To use it:
    `LETTERS`, so those sentences are excluded rather than scored as failures; see the note on
    what is deliberately absent in the top-level README.
 
-That is all — `sayso_eval` reads `data/google_tn_slice.tsv` with no further arguments. The
+That is all, `sayso_eval` reads `data/google_tn_slice.tsv` with no further arguments. The
 dataset has no canonical-written column, so the report will say ITN is scored against the
 written column; see the note above on what that costs.
 
@@ -95,7 +95,7 @@ written column; see the note above on what that costs.
 ### The synthetic fallback
 
 With no real slice present, `generate_slice.cpp` writes a 500-example one so the harness runs
-end to end. Its spoken side comes from a small reference verbaliser in that file — ordinary
+end to end. Its spoken side comes from a small reference verbaliser in that file, ordinary
 arithmetic and string concatenation, deliberately *not* the transducers under test, since a
 slice generated from the grammars being scored would report 100% and measure nothing.
 
@@ -147,16 +147,16 @@ $ brew install openfst && CPPFLAGS=-I/opt/homebrew/include \
 
 OpenFst renamed `StringJoin` to `StrJoin` in 1.8.4. pynini 2.1.6 targets 1.8.3; pynini 2.1.7
 targets 1.8.4, which is why the third attempt compiled. The upstream-recommended route,
-`conda install -c conda-forge pynini`, ships a prebuilt binary and avoids all of this — there
+`conda install -c conda-forge pynini`, ships a prebuilt binary and avoids all of this, there
 is no conda on this machine.
 
 ### Reading the results
 
 Run both modes. `--relaxed` is the only one in which a cross-system number means anything:
 strict scoring penalises NeMo for hyphenation, for the British "and", for spelling "oh" as "o"
-and for capitalising "Celsius" — none of which is a distinction speech makes — and feeds its
+and for capitalising "Celsius", none of which is a distinction speech makes, and feeds its
 inverse normaliser hyphenated text that no speech recogniser produces. Even relaxed, several remaining
-gaps are differences of target rather than errors — the top-level README enumerates them
+gaps are differences of target rather than errors, the top-level README enumerates them
 against `nemo_results.tsv`.
 
 `.venv/` is gitignored. Nothing in it is on any include or link path used by `make`.
