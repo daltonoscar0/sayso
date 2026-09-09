@@ -30,7 +30,7 @@ const char* kMagnitudes[] = {"thousand", "million", "billion", "trillion"};
 
 // The same magnitudes written as a letter suffix, which is how a newspaper
 // writes them: "£20m", "$26.6bn", "$50k". Spans are case-folded before a
-// grammar sees them, so only the lowercase spellings belong here — "$3B"
+// grammar sees them, so only the lowercase spellings belong here, "$3B"
 // arrives as "$3b".
 struct MagnitudeSuffix {
     const char* written;
@@ -67,9 +67,49 @@ Wfst optional_and() {
     return union_of({words_out({"and"}), empty_string_fst(kNoAndPenalty)});
 }
 
-Wfst build_money() {
+// The cents field of a price said as a bare number: "$4.99" -> "four
+// ninety-nine", "$4.05" -> "four oh five".
+//
+// It is the clock's minute field in everything but name, which is not a
+// coincidence: "four ninety-nine" and "four fifty-nine" are the same shape, and
+// English reads a two-digit tail after a small number the same way whether the
+// number counts dollars or hours. ".00" is deliberately absent -- "$12.00" is
+// "twelve dollars", never "twelve oh oh".
+Wfst spoken_cents() {
+    static const char* kUnitWords[10] = {"zero", "one", "two",   "three", "four",
+                                         "five", "six", "seven", "eight", "nine"};
+    static const char* kTeens[10] = {"ten",     "eleven",  "twelve",   "thirteen",
+                                     "fourteen", "fifteen", "sixteen", "seventeen",
+                                     "eighteen", "nineteen"};
+    std::vector<Wfst> tails;
+    for (int c = 1; c <= 9; ++c)
+        tails.push_back(rule("0" + digit(c), {"oh", kUnitWords[c]}));
+    for (int c = 10; c <= 19; ++c)
+        tails.push_back(rule(std::to_string(c), {kTeens[c - 10]}));
+    for (int c = 20; c <= 99; ++c) {
+        std::string tens = kTensWords[c / 10];
+        if (c % 10 == 0) {
+            tails.push_back(rule(std::to_string(c), {tens}));
+            continue;
+        }
+        // Hyphenated, and the spaced spelling accepted at the usual hair. This
+        // grammar is not run through hyphenated() -- the amount and the cents
+        // field arrive already joined -- so the compound is written whole here.
+        std::string unit = kUnitWords[c % 10];
+        tails.push_back(rule(std::to_string(c), {tens + "-" + unit}));
+        tails.push_back(
+            rule(std::to_string(c), {tens, unit}, kSpacedCompoundPenalty));
+    }
+    return union_of(tails);
+}
+
+Wfst build_money(Style style) {
     Wfst amount = hyphenated(cardinal_positive_fst());
     Wfst cents = cents_two_digit();
+    // Under Style::Phone the elided reading is free and the unit-bearing one
+    // pays a hair; under Style::Plain the other way about, by two whole units.
+    float elided_cost = style == Style::Phone ? 0.0f : kElidedPriceUnits;
+    float units_cost = style == Style::Phone ? kPricePreferenceMargin : 0.0f;
 
     // The fractional tail of a magnitude amount, spoken digit by digit:
     // "2.5 million" -> "two point five million".
@@ -97,8 +137,8 @@ Wfst build_money() {
             short_cents.push_back(rule(digit(d), {kTensWords[d]}));
 
         // Everything that may follow a major amount, unioned *before* the
-        // amount is concatenated onto it. Written the other way round — one
-        // branch per tail, each beginning with the amount — every currency
+        // amount is concatenated onto it. Written the other way round, one
+        // branch per tail, each beginning with the amount, every currency
         // carries four copies of the cardinal machine instead of one, and
         // composing this grammar against a span is the single largest cost in
         // the classifier. Path weights are unchanged: the tropical semiring
@@ -109,12 +149,29 @@ Wfst build_money() {
             union_of({
                 empty_string_fst(),                            // $25
                 chars_in(".00", kExplicitZeroCentsPenalty),    // $25.00
-                concat_of({chars_in("."), optional_and(), minor}),  // $25.10
+                reweight(concat_of({chars_in("."), optional_and(), minor}),
+                         units_cost),                          // $25.10
                 reweight(concat_of({chars_in("."), optional_and(),
                                     union_of(short_cents),
                                     words_out({c.minor_plural})}),
                          kShortCentsPenalty),                  // $2.5
             }),
+        }));
+
+        // $4.99 -> four ninety-nine, with no currency word anywhere. The major
+        // amount is a bare cardinal here rather than amount_with_unit(), which
+        // is the whole difference.
+        branches.push_back(reweight(
+            concat_of({symbol, amount, chars_in("."), spoken_cents()}),
+            elided_cost));
+
+        // "$5-10" and "$5-$10" -> "five to ten dollars". The unit is said once,
+        // at the end, which is what English does with a priced range; RANGE
+        // would read the hyphen as a minus and leave the currency stranded.
+        branches.push_back(concat_of({
+            symbol, amount, chars_in("-"), words_out({"to"}),
+            optional_of(chars_in(c.symbol, currency_cost)), amount,
+            words_out({c.major_plural}),
         }));
 
         // $0.99 -> ninety-nine cents, with the spelled-out zero accepted too
@@ -138,8 +195,8 @@ Wfst build_money() {
         for (const char* m : kMagnitudes)
             magnitudes.push_back(
                 concat_of({chars_in(" "), transducer(chars_of(m), words_of({m}))}));
-        // A space before the suffix is written too — "$5.4 M" as often as
-        // "$5.4M" — and without it MEASURE claimed the amount as metres.
+        // A space before the suffix is written too, "$5.4 M" as often as
+        // "$5.4M", and without it MEASURE claimed the amount as metres.
         for (const MagnitudeSuffix& s : kMagnitudeSuffixes)
             magnitudes.push_back(concat_of({
                 union_of({empty_string_fst(), chars_in(" ")}),
@@ -153,10 +210,12 @@ Wfst build_money() {
 
 }  // namespace
 
-const Cascade& money_grammar() {
-    static const Wfst core = build_money();
-    static const Cascade grammar = Cascade().then(core);
-    return grammar;
+const Cascade& money_grammar(Style style) {
+    static const Wfst plain_core = build_money(Style::Plain);
+    static const Wfst phone_core = build_money(Style::Phone);
+    static const Cascade plain = Cascade().then(plain_core);
+    static const Cascade phone = Cascade().then(phone_core);
+    return style == Style::Phone ? phone : plain;
 }
 
 }  // namespace sayso
