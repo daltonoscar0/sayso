@@ -39,8 +39,8 @@ Input   →  "St Paul's, vol 3, pp 1-10, e.g. the 1980s."
 TTS     →  "Saint Paul's, volume three, pp one to ten, e g the nineteen eighties."
 ```
 
-Nine of the seventeen are bidirectional. Eight, `RANGE`, `ABBREV`, `LETTERS`, `TELEPHONE`,
-`ADDRESS`, `NAME`, `STATE`, `PHONE`, only speak; see
+Nine of the seventeen are bidirectional. The other eight (`RANGE`, `ABBREV`, `LETTERS`,
+`TELEPHONE`, `ADDRESS`, `NAME`, `STATE`, `PHONE`) only speak; see
 [One-directional classes](#one-directional-classes) for why that is a property of those
 classes rather than a hole in the design.
 
@@ -177,7 +177,7 @@ classes out of ordinary prose: a street name and a surname must be **capitalised
 ambiguous suffix with no number in front of it pays for the privilege.
 
 The same shape settles the postal codes. `AR` is Arkansas in `Little Rock, AR` and the letters
-A R everywhere else, and every two-letter code is a word somewhere, `IN`, `OR`, `HI`, `ME`,
+A R everywhere else, and every two-letter code is a word somewhere: `IN`, `OR`, `HI`, `ME`,
 `OK` and `PA` are all states and all something commoner. `STATE` demands the one shape only an
 address has: a capitalised place name, a comma, then the code. A bare `AR` has no parse at all.
 
@@ -493,8 +493,8 @@ both fit, a hair of weight on the general one makes the specific one win, withou
 `difference` operation. **Canonicalisation by penalty**: several written forms map to one
 spoken form, and the cheapest written form is the one ITN produces.
 
-Where nondeterminism arises from inversion, `twenty five` against `twenty-five`, `$3` against
-`$3.00`, it is always resolved this way. Sayso never determinises; the best path does the work.
+Where nondeterminism arises from inversion (`twenty five` against `twenty-five`, `$3` against
+`$3.00`) it is always resolved this way. Sayso never determinises; the best path does the work.
 
 ---
 
@@ -555,7 +555,7 @@ than defects and say so.
 | `Mr. and Mrs. Smith` | `mister. and Missus Smith` | `Mister and Missus Smith` | `and` is lowercase so `NAME` cannot claim the first title, `ABBREV` expands it lowercase, and the stop is left behind as punctuation |
 
 Two patterns run through that list. Five rows want a class to read a keyword in front of a
-number, `extension`, `PIN`, `dial`, which is the contextual reranking `Next steps` has always
+number (`extension`, `PIN`, `dial`) which is the contextual reranking `Next steps` has always
 described and not something a span-local grammar can do. Four are the same regnal-numeral
 decision counted four times.
 
@@ -580,7 +580,7 @@ conclusions from the NeMo columns.
 | **all** | **500** | **100.0%** | **98.8%** | **9.6%** | **7.6%** |
 
 The six ITN failures are the only place the two implementations disagree, and they disagree
-deliberately. All six are a bare clock time in the eleventh or twelfth hour, "eleven oh two",
+deliberately. All six are a bare clock time in the eleventh or twelfth hour ("eleven oh two")
 which is also a year, and Sayso now resolves that toward the year because the corpus is
 emphatic: reading it as a time made 588 of the 1000 years in 1100-2099 fail to round-trip. A
 time keeps its meridiem, so "eleven oh two p m" is unaffected. The weight comment on
@@ -768,7 +768,7 @@ nothing either; its premise was the same wrong claim.
 ### On the real Google TN slice
 
 Everything above is the synthetic slice. This is 5,000 sentences of Wikipedia from
-`output-00099-of-00100`, a held-out *test* shard, per the dataset's own split, normalised by
+`output-00099-of-00100`, a held-out *test* shard per the dataset's own split, normalised by
 Google's Kestrel and used as the reference. It is the only number here that measures agreement
 with something other than Sayso's own conventions.
 
@@ -869,7 +869,7 @@ The next two rows are out of scope by decision, not by omission, see
 and it is now a long tail rather than a short list of missing classes.
 
 Two harness changes were needed before any of this was measurable. Kestrel marks punctuation
-`sil`, written but not spoken, so the reference spoken column has none, while Sayso copies
+`sil` (written but not spoken) so the reference spoken column has none, while Sayso copies
 punctuation through verbatim, which is what a TTS front end must do. Compared naively, every
 class scored 0.0% with almost every sentence failing on a comma; relaxed scoring now drops
 standalone punctuation from both sides. And `--errors=N` prints every mismatch rather than ten,
@@ -937,7 +937,7 @@ Each grammar is held to a round-trip property over seeded random input:
 `itn(tts(n)) == n` for integers and ordinals, for amounts in cents, for dates; and
 `tts(itn(s)) == s` for well-formed spoken forms, which is the property that pins the
 *canonical* spoken form rather than merely a readable one. The property harness
-(`property.h`) is about eighty lines, a seeded xorshift generator and a shrinker, so the
+(`property.h`) is about eighty lines (a seeded xorshift generator and a shrinker) so the
 test build has the same zero-dependency story as the library.
 
 On the Python side, `tests/test_contract.py` checks the shape of a `StageResult` against the
