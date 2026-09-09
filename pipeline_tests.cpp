@@ -237,7 +237,7 @@ static void class_competition_tests() {
 
     // "three pounds" is sterling as often as it is weight and the classifier
     // has no context to tell them apart, so the measure reading is priced to
-    // lose the tie — while "5 lb", which no currency writes, still wins it.
+    // lose the tie, while "5 lb", which no currency writes, still wins it.
     check(tagging("three pounds", Direction::ITN) == "MONEY(three pounds)" &&
               tagging("5 lb", Direction::TTS) == "MEASURE(5 lb)",
           "a spoken 'pounds' is money, a written 'lb' is weight");
@@ -282,7 +282,13 @@ static void class_competition_tests() {
 // 5.0 against a class entry cost of 0.05.
 
 static void one_directional_tests() {
-    check(normalize("St Paul", Direction::TTS) == "saint Paul" &&
+    // "Saint Paul" and not "saint Paul", because NAME reads this now and NAME
+    // capitalises: a title is part of the name it introduces. The pipeline
+    // contract's demo sentence is what settles it -- "Dr. Lee" has to reach
+    // "Doctor Lee" -- and "St Paul" is the same rule seen from the other end.
+    // ABBREV still lowercases the abbreviations that are not titles, which is
+    // why "vol" and "vs" are unchanged here.
+    check(normalize("St Paul", Direction::TTS) == "Saint Paul" &&
               normalize("vol 3", Direction::TTS) == "volume three" &&
               normalize("Smith vs Jones", Direction::TTS) == "Smith versus Jones",
           "abbreviations expand when speaking");
@@ -319,8 +325,8 @@ static void one_directional_tests() {
 
 static void later_class_tests() {
     // A range's shape is the prefix of an ISO date's. The guard is structural
-    // — ranges.cpp refuses a four-digit operand followed by a month-shaped one
-    // — because relying on the entry cost worked only while zero-padding
+    //, ranges.cpp refuses a four-digit operand followed by a month-shaped one
+    //, because relying on the entry cost worked only while zero-padding
     // happened to make the alternative expensive.
     check(tagging("2011-11-11", Direction::TTS) == "DATE(2011-11-11)" &&
               tagging("2015-03-14", Direction::TTS) == "DATE(2015-03-14)" &&
@@ -357,7 +363,7 @@ static void later_class_tests() {
 
     check(normalize("St Paul's, vol 3, pp 1-10, e.g. 1729-1811.",
                     Direction::TTS) ==
-              "saint Paul's, volume three, pp one to ten, e g seventeen "
+              "Saint Paul's, volume three, pp one to ten, e g seventeen "
               "twenty-nine to eighteen eleven.",
           "five of the later classes in one sentence");
 }
@@ -396,7 +402,7 @@ static void review_regression_tests() {
 
     // "a" plus an ordinal is ordinary English, and a fraction span covering
     // both was cheaper than ORDINAL plus the cost of leaving the article
-    // alone — so the article was absorbed into the numerator and vanished.
+    // alone, so the article was absorbed into the numerator and vanished.
     check(normalize("a nineteenth century painter", Direction::ITN) ==
               "a 19th century painter" &&
               normalize("a third and final season", Direction::ITN) ==
@@ -412,7 +418,7 @@ static void review_regression_tests() {
 
     // A currency amount keeps its cents when a magnitude follows. MEASURE used
     // to claim ".4 M" as metres, because its amount admitted an elided leading
-    // zero — which no measurement is ever written with — and the two outputs
+    // zero, which no measurement is ever written with, and the two outputs
     // met as the non-word "dollarspoint".
     check(normalize("Sells $5.4 M. Central Park", Direction::TTS) ==
               "Sells five point four million dollars. Central Park" &&
