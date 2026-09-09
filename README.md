@@ -910,7 +910,7 @@ contract the rest of the front end is written against.
 
 ```bash
 make test     # 210 C++ tests, no dependencies
-pytest        # 54 Python tests: the contract, the telephone cases, the properties
+pytest        # 43 Python tests: the contract, the telephone cases, the properties
 ```
 
 ```
