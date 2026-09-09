@@ -4,7 +4,7 @@
 // A Property bundles a generator, the predicate under test, a shrinker and a
 // printer. check_property() draws `trials` values from a seeded RNG, and on
 // the first failure walks the shrinker downhill until no smaller
-// counterexample fails — so a report names the simplest input that breaks,
+// counterexample fails, so a report names the simplest input that breaks,
 // not the random one that happened to.
 #include <cstdint>
 #include <functional>

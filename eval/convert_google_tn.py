@@ -16,14 +16,14 @@ Usage:
     python3 convert_google_tn.py output-00000-of-00100 > data/google_tn_slice.tsv
 
 Only sentences whose semiotic content Sayso actually implements are kept, and
-the count of everything dropped is reported on stderr — scoring a twelve-class
+the count of everything dropped is reported on stderr, scoring a twelve-class
 normaliser on sentences containing ELECTRONIC or TELEPHONE would measure the absence
 of those classes, not the quality of the twelve that exist. Pass --classes to
 change the set, or --keep-all to disable the filter and see what the twelve
 classes score on unrestricted text.
 
 One property of the reconstruction is worth knowing: the dataset stores tokens,
-not sentences, so the written side comes out space-separated — "The 2006 ."
+not sentences, so the written side comes out space-separated, "The 2006 ."
 rather than "The 2006." Every system under evaluation is handed the same
 string, so the comparison stays fair, but it is not quite natural text and
 Sayso's serialiser will preserve that spacing in its output.
@@ -42,8 +42,8 @@ NEUTRAL = {"PLAIN", "PUNCT"}
 DEFAULT_CLASSES = ["CARDINAL", "ORDINAL", "DECIMAL", "FRACTION",
                    "MONEY", "MEASURE", "DATE", "TIME", "TELEPHONE"]
 
-# LETTERS is implemented only in part — a table of the commonest acronyms,
-# covering about half the token mass against 15,000 distinct types — so it is
+# LETTERS is implemented only in part, a table of the commonest acronyms,
+# covering about half the token mass against 15,000 distinct types, so it is
 # not in the default set. Pass --classes to add it and see the broader,
 # lower number; the top-level README quotes both.
 
@@ -128,7 +128,7 @@ def main():
         for reason, count in dropped.most_common():
             print("  %-24s %d" % (reason, count), file=sys.stderr)
     if kept < args.count:
-        print("warning: wanted %d, the shard yielded %d — pass another shard "
+        print("warning: wanted %d, the shard yielded %d, pass another shard "
               "or --keep-all" % (args.count, kept), file=sys.stderr)
 
 

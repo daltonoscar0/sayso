@@ -21,14 +21,14 @@ Wfst fractional_digits() {
     return concat_of({union_of(digits), closure(union_of(digits))});
 }
 
-// The point and everything after it — what turns a cardinal into a decimal.
+// The point and everything after it, what turns a cardinal into a decimal.
 Wfst decimal_tail() {
     return concat_of({rule(".", {"point"}), fractional_digits()});
 }
 
 // The two ways a decimal below one loses its leading zero. Neither is
 // canonical; their relative cost is what decides which written form ITN
-// restores — "0.5" rather than ".5".
+// restores, "0.5" rather than ".5".
 std::vector<Wfst> elided_zero_branches() {
     return {
         concat_of({chars_in("0", kUnspokenLeadingZeroPenalty), decimal_tail()}),
@@ -60,7 +60,7 @@ Wfst build_number_or_decimal() {
 // "3.5" and PLAIN copying "million" through. That is true going forwards and
 // false coming back: PLAIN is priced per character, so "million" costs 7.0,
 // and CARDINAL reading "five million" as 5000000 for 0.21 undercuts the whole
-// thing. "three point five million" came back as "3 point 5000000" — a round
+// thing. "three point five million" came back as "3 point 5000000", a round
 // trip that is not merely unidiomatic but wrong by six orders of magnitude.
 Wfst optional_magnitude() {
     static const char* kMagnitudes[] = {"thousand", "million", "billion", "trillion"};

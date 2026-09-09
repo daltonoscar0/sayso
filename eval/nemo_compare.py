@@ -9,7 +9,7 @@ are allowed to exist.
     python nemo_compare.py [data/google_tn_slice.tsv] [--relaxed]
 
 --relaxed folds away conventions two correct normalisers may simply disagree
-about — hyphens inside compounds, the British "and", "o" for "oh", letter case — and
+about, hyphens inside compounds, the British "and", "o" for "oh", letter case, and
 strips hyphens from
 the ITN input, which inverse normalisers do not expect because ASR output has
 none. It is the only mode in which a cross-system number means anything.

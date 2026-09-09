@@ -12,7 +12,7 @@
 // correct normalisers may simply disagree about: hyphens inside compounds
 // ("thirty-fourth" vs "thirty fourth"), the British "and" in "nine hundred and
 // forty two", "o" for "oh" in "eleven o two", and letter case in "degrees
-// Celsius" — none of which is a distinction speech makes. It also strips
+// Celsius", none of which is a distinction speech makes. It also strips
 // hyphens from the ITN *input*,
 // because inverse normalisers are built for ASR output, which has none.
 // Relaxed is the only mode in which a cross-system number means anything;
@@ -23,8 +23,8 @@
 // is written 3/14/2015, 2015-03-14, "March 14, 2015" and "14 March 2015";
 // Sayso reads all four and writes the first, so scoring ITN against whichever
 // form the corpus happened to use measures format preference, not accuracy.
-// Where the column is present ITN is scored against it. Where it is absent —
-// the real Google TN slice has no such column — ITN is scored against the
+// Where the column is present ITN is scored against it. Where it is absent,
+// the real Google TN slice has no such column, ITN is scored against the
 // written column, and the report says so.
 //
 // Build:
@@ -103,7 +103,7 @@ std::string dehyphenate(const std::string& s) {
 
 // Drop whole tokens that are nothing but punctuation.
 //
-// The Google TN reference marks punctuation "sil" — written but not spoken —
+// The Google TN reference marks punctuation "sil", written but not spoken,
 // so its spoken column has none at all, while Sayso copies punctuation through
 // verbatim, which is what a TTS front end must do. Comparing the two without
 // this makes almost every sentence a mismatch on a comma, and measures a
@@ -226,8 +226,8 @@ int main(int argc, char** argv) {
     auto compare = [&](const std::string& a) {
         return relaxed ? drop_punctuation(fold_style(squeeze(a))) : squeeze(a);
     };
-    // The written side keeps its case and hyphens — those are real distinctions
-    // there — but loses standalone punctuation for the reason above.
+    // The written side keeps its case and hyphens, those are real distinctions
+    // there, but loses standalone punctuation for the reason above.
     auto compare_written = [&](const std::string& a) {
         return relaxed ? drop_punctuation(squeeze(a)) : squeeze(a);
     };
@@ -271,7 +271,7 @@ int main(int argc, char** argv) {
     // quoting only one would be misleading.
     //
     // Cold: the scoring pass above, every sentence seen for the first time, in
-    // both directions. This is the cost of classifying genuinely novel text —
+    // both directions. This is the cost of classifying genuinely novel text,
     // every span of every sentence asked of every grammar.
     //
     // Warm: the slice cycled to 10,000 sentences, which is what a real corpus

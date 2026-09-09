@@ -2,7 +2,7 @@
 // Measure grammar: "5 km" <-> "five kilometers", "50%" <-> "fifty percent".
 //
 // An amount followed by a unit, with the unit word agreeing in grammatical
-// number — the currency grammar's structure exactly, which is unsurprising,
+// number, the currency grammar's structure exactly, which is unsurprising,
 // since a currency *is* a measure whose unit happens to be written in front of
 // the amount instead of after it.
 //

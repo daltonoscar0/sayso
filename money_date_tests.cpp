@@ -90,7 +90,7 @@ static void money_tests() {
                 true),
           "magnitudes: $2.5 million");
 
-    // Where digits do say the same words, digits are what ITN writes — the
+    // Where digits do say the same words, digits are what ITN writes, the
     // same canonicalisation that drops the thousands comma. Both written forms
     // are still read.
     check(tts(money_grammar(), "$3 million") == "three million dollars" &&
@@ -331,7 +331,7 @@ static void date_order_tests() {
 
     // Preserving the written order is what the Google TN reference does, and
     // it is 84% of everything Sayso otherwise disagrees with. A date written
-    // day first is spoken day first — an ISO date included, which is not
+    // day first is spoken day first, an ISO date included, which is not
     // obvious until you read the data.
     const Cascade& preserve = date_grammar(DateSpeech::PreserveWrittenOrder);
     check(tts(preserve, "14 march 2015") == "the fourteenth of march twenty fifteen" &&
@@ -344,7 +344,7 @@ static void date_order_tests() {
 
     // Both spoken forms still read back to a written date. Inside the
     // day-first family ITN settles on the cheapest member, which is the ISO
-    // form — the same canonicalisation by weight as everywhere else.
+    // form, the same canonicalisation by weight as everywhere else.
     check(itn(preserve, "the fourteenth of march twenty fifteen") == "2015-03-14" &&
               itn(preserve, "march fourteenth twenty fifteen") == "3/14/2015",
           "and each spoken form reads back to a written one");

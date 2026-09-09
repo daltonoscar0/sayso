@@ -2,7 +2,7 @@
 // Shared symbol table for Sayso's transducers.
 //
 // Every grammar in the library composes with every other, so they all have
-// to agree on integer labels — hence one process-wide table rather than a
+// to agree on integer labels, hence one process-wide table rather than a
 // per-FST one. Label 0 is reserved for epsilon.
 //
 // Two kinds of symbol live in the same table:

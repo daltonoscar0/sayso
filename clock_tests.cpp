@@ -109,7 +109,7 @@ static void hour_tests() {
               true),
           "twenty-four-hour times are read");
 
-    // A round hour on a twenty-four-hour clock is "hundred", not "o'clock" —
+    // A round hour on a twenty-four-hour clock is "hundred", not "o'clock",
     // "18:00" is eighteen hundred. Each reading stays available to the other
     // clock at a cost, so neither is refused.
     check(table(
@@ -162,7 +162,7 @@ static void meridiem_tests() {
               itn("three thirty p m") == "3:30 pm",
           "dotted and unspaced meridiems are read, 'pm' with a space is written");
 
-    // A bare hour with a meridiem and no minute field at all — how a time is
+    // A bare hour with a meridiem and no minute field at all, how a time is
     // usually written. ITN puts the minutes back.
     check(table(
               {

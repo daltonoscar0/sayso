@@ -4,7 +4,7 @@
 // Sayso does not tokenise. It runs Scalpel's FSM tokeniser and repairs one
 // known gap: Scalpel's START state only reacts to LETTER, DIGIT, PUNCT and
 // PERIOD, so characters it classifies as HYPHEN, APOSTROPHE or OTHER are
-// dropped when they begin a token — which is exactly what '-' in "2015-03-14"
+// dropped when they begin a token, which is exactly what '-' in "2015-03-14"
 // and '€' in "€40" do. Rather than fork the tokeniser, this adapter compares
 // token offsets against the input and re-inserts anything that went missing.
 #include <string>

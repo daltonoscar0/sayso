@@ -3,7 +3,7 @@
 //
 // Dotted shapes only, and that restriction is forced rather than chosen.
 // CLASSIFY folds a span's case before any grammar sees it, so nothing here can
-// tell "PDF" from "pdf" — and a rule for bare letter runs would therefore
+// tell "PDF" from "pdf", and a rule for bare letter runs would therefore
 // spell out every lower-case word it met. The dots are the only signal that
 // survives folding, and they are an unambiguous one: no English word contains
 // a full stop between two of its letters.

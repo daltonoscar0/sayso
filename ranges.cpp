@@ -42,7 +42,7 @@ Wfst two_digits_from(int lo) {
 }
 
 // Four digits, read as a year where one is available and as a cardinal
-// otherwise — the same margin cardinal_grammar() uses, so "1624-1713" is
+// otherwise, the same margin cardinal_grammar() uses, so "1624-1713" is
 // "sixteen twenty four to seventeen thirteen".
 Wfst four_digits() {
     const NumberParts& p = number_parts();

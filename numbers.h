@@ -1,7 +1,7 @@
 #pragma once
 // Cardinal and ordinal grammars.
 //
-// Every grammar in Sayso is written in one direction only — written form on
+// Every grammar in Sayso is written in one direction only, written form on
 // the lower tape, spoken form on the upper tape. The ITN direction is the
 // inverse of the same cascade, so the two directions cannot drift apart.
 #include <string>
@@ -21,7 +21,7 @@ const Cascade& ordinal_grammar();
 // spaced one is not, so TTS produces "twenty-five" while ITN reads both.
 //
 // The pass needs an identity arc for every word it may see, and a word it has
-// not been told about does not merely pass through — it has no arc, so the
+// not been told about does not merely pass through, it has no arc, so the
 // path dies. Rather than maintain that list by hand, the vocabulary is read
 // off `f`'s own output labels. Applying this to a machine is therefore always
 // safe, whatever words it emits.
@@ -47,7 +47,7 @@ const Wfst& cardinal_positive_fst();  // excludes it, so "$0.99" is cents-only
 
 // How English says a four-digit number as a year: the digits are paired, so
 // 1984 is "nineteen eighty-four", 1905 is "nineteen oh five" and 1900 is
-// "nineteen hundred" — except across 2000-2009, where the cardinal reading
+// "nineteen hundred", except across 2000-2009, where the cardinal reading
 // wins and 2005 is "two thousand five". The weights choose; both readings are
 // in the machine.
 //
@@ -55,8 +55,8 @@ const Wfst& cardinal_positive_fst();  // excludes it, so "$0.99" is cents-only
 // second copy would drift: the date grammar's year field, and the cardinal
 // grammar, which offers the same reading for a bare four-digit span.
 //
-// `first_century` and `last_century` bound the leading pair — 19 to 20 is
-// 1900 to 2099 — and the bound is a size decision, since each century is a
+// `first_century` and `last_century` bound the leading pair, 19 to 20 is
+// 1900 to 2099, and the bound is a size decision, since each century is a
 // distinct path. `with_cardinal_fallback` adds the plain cardinal reading at
 // kCardinalYearPenalty; a caller that already has one of its own says false.
 // The result is unhyphenated, so the caller's own pass joins the compounds.
@@ -69,7 +69,7 @@ constexpr int kBareYearFirstCentury = 11;
 constexpr int kBareYearLastCentury = 20;
 
 // Everything a bare numeric span may be: a signed cardinal, a year, or a Roman
-// numeral — the body of cardinal_grammar() before hyphenation. Exposed for the
+// numeral, the body of cardinal_grammar() before hyphenation. Exposed for the
 // range grammar, whose operands are bare numbers by definition, so that
 // "1729-1811" gets the year reading its two halves would get alone.
 const Wfst& bare_number_fst();

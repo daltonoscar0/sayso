@@ -17,20 +17,20 @@
 // decision: it also splits the ISBNs, phone numbers and model numbers Kestrel
 // kept whole, and this shape fires inside thousands of them. Counting those,
 // precision is nearer 70%. Two structural guards claw back most of the
-// difference — operands are at most four digits with no leading zero, and the
-// year-month prefix of an ISO date is refused outright — but a range remains
+// difference, operands are at most four digits with no leading zero, and the
+// year-month prefix of an ISO date is refused outright, but a range remains
 // the least certain thing Sayso claims, which is what its entry cost says.
 //
 // Hyphen only. The en dash does not appear in the corpus; every em dash is
 // silent; and the colon, which looks like the same construction, turns out to
-// be 95.7% bibliographic citation — "Astrophysical Journal 94: 501" read as
+// be 95.7% bibliographic citation, "Astrophysical Journal 94: 501" read as
 // "ninety four to five hundred one" is a reference-list artefact rather than
 // anything a person says, and admitting it would put this class up against
 // TIME on every clock in the corpus.
 //
 // One-directional, and for a different reason from the other two classes that
 // are. Written "5-10" spoken as "five to ten" is normalisation; spoken "five
-// to ten" written as "5-10" is a change of syntax rather than of spelling —
+// to ten" written as "5-10" is a change of syntax rather than of spelling,
 // "increased from five to ten percent" would become "increased from 5-10
 // percent", which does not mean the same thing.
 #include "wfst.h"
