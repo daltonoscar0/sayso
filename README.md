@@ -476,7 +476,7 @@ accumulating cheap internal decisions.
 | `kFoldedCasePenalty` | 0.1 | reads `°c` and `mhz`, writes `°C` and `MHz` |
 | `kCurrencyHomographPenalty` | 0.25 | `three pounds` is sterling, `5 lb` is weight |
 | `kPlainPerChar` | 1.0 | per character of untouched text; this is what makes long spans win |
-| class entry costs | 0.05 – 0.5 | `MONEY($25)` beats `PLAIN($) + CARDINAL(25)` |
+| class entry costs | 0.05, 0.5 | `MONEY($25)` beats `PLAIN($) + CARDINAL(25)` |
 
 Three of the newer entries are the same idiom seen from an odd angle. `kBareHourPenalty` is
 one weight leaning opposite ways in two branches, because whether a round hour is spoken
