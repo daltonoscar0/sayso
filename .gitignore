@@ -1,5 +1,5 @@
 # Compiled binaries
-sayso
+/sayso
 wfst_tests
 number_tests
 money_date_tests
@@ -36,3 +36,10 @@ AGENTS.md
 .mcp.json
 tasks/lessons.md
 tasks/todo.md
+
+# Python packaging / caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.hypothesis/
