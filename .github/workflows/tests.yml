@@ -17,10 +17,19 @@ jobs:
         with:
           path: sayso
 
+      # KNOWN FAILURE until Scalpel's Irish-mutation work is merged.
+      # classify.cpp, symbols.cpp and text.cpp all include
+      # ../Scalpel/utf8.h, and that header does not exist on Scalpel's main
+      # branch -- it arrives with the mutation_fst layer
+      # (daltonoscar0/Scalpel#1). So this job cannot build until that merges,
+      # after which it should go green with no change here.
+      # Deliberately tracking main rather than pinning to that PR's branch,
+      # which will be deleted on merge.
       - name: Check out Scalpel
         uses: actions/checkout@v4
         with:
           repository: daltonoscar0/Scalpel
+          ref: main
           path: Scalpel
 
       - name: Compiler version
