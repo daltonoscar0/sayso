@@ -316,6 +316,29 @@ static void one_directional_tests() {
               normalize("a and I went", Direction::ITN) == "a and I went",
           "and single letters are not glued back into acronyms");
 
+    // A verbalisation is words, and a word with a stray letter or digit welded
+    // to its edge is not a reading of anything. "x22" used to come back
+    // "xtwenty-two" and "221B" "two hundred twenty-oneB", because the letter is
+    // outside the span the grammar claimed and the serialiser copied it through
+    // hard against the output.
+    // Plain style here, so "555-1212" is the range it reads as on a page; the
+    // phone reading is the same point under --style phone and is covered by
+    // tests/data/phone_cases.tsv. What is being pinned either way is the "x".
+    check(normalize("555-1212 x22", Direction::TTS) ==
+              "five hundred fifty-five to twelve twelve x twenty-two" &&
+              normalize("221B Baker St", Direction::TTS) ==
+              "two hundred twenty-one B Baker Street",
+          "a rewritten span never runs into the letter beside it");
+
+    // Only alphanumeric, and only beside a rewritten span: punctuation touching
+    // a word is correct and is pinned above. And a lone trailing "s" really is a
+    // suffix on the number word rather than a token beside it, which is the one
+    // exception and the only thing the rule above costs on the corpus.
+    check(normalize("He paid $5 (plus tax).", Direction::TTS) ==
+              "He paid five dollars (plus tax)." &&
+              normalize("Under-14s", Direction::TTS) == "Under-fourteens",
+          "and punctuation and the English plural still touch");
+
     check(normalize("pp 1-10", Direction::TTS) == "pp one to ten" &&
               normalize("five to ten people", Direction::ITN) == "5 to 10 people",
           "a range speaks as 'to', and 'to' is not written back as a hyphen");

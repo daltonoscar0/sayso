@@ -523,12 +523,12 @@ under `--style phone`.
 | `STATE` | 44 | 93.2% |
 | `FRACTION` | 44 | 88.6% |
 | `NAME` | 44 | 88.6% |
-| `PHONE` | 42 | 83.3% |
-| **all** | **306** | **93.5%** |
+| `PHONE` | 42 | 85.7% |
+| **all** | **306** | **93.8%** |
 
 ### Failure cases
 
-All twenty rows that fail, verbatim, with one clause each on why. Six are decisions rather
+All nineteen rows that fail, verbatim, with one clause each on why. Six are decisions rather
 than defects and say so.
 
 | input | Sayso | wanted | why |
@@ -546,7 +546,6 @@ than defects and say so.
 | `extension 4412` | `extension four thousand four hundred twelve` | `extension four four one two` | decision: the digit-by-digit rule starts at seven digits, and four-digit numbers are numbers far more often than extensions |
 | `PIN 4417` | `PIN four thousand four hundred seventeen` | `PIN four four one seven` | the same rule; the keyword in front is evidence no grammar reads |
 | `ext 220` | `ext two hundred twenty` | `ext two twenty` | the same, and `ext` itself is not in the abbreviation table |
-| `555-1212 x22` | `… one two one two xtwenty-two` | `… x twenty-two` | `x22` is one token, `CARDINAL` claims the `22`, and the renderer concatenates a character to the word beside it with no space |
 | `02 555 1212` | `zero two five five five, …` | `oh two five five five, …` | a leading zero is not a North American shape, so `PHONE` declines the span and `CARDINAL` reads `02` |
 | `F. Scott Fitzgerald` | `F. Scott Fitzgerald` | `F Scott Fitzgerald` | decision: `NAME` needs two initials, because one initial in front of a capitalised name absorbs it for free and cost `$5.4 M. Central Park` its magnitude |
 | `Elizabeth II` | `Elizabeth two` | `Elizabeth the second` | decision: a regnal numeral is offered only behind a title, because `World War II` is the same shape and no weight separates them |
@@ -558,6 +557,18 @@ Two patterns run through that list. Five rows want a class to read a keyword in 
 number (`extension`, `PIN`, `dial`) which is the contextual reranking `Next steps` has always
 described and not something a span-local grammar can do. Four are the same regnal-numeral
 decision counted four times.
+
+The twentieth row used to be `555-1212 x22`, reading `… one two one two xtwenty-two`: `x22` is
+one token, `CARDINAL` claimed the `22`, and the serialiser copied the `x` through hard against
+the output. A verbalisation is words, and a word with a letter welded to its edge is not a
+reading of anything, so the serialiser now puts a space in when a rewritten span meets an
+alphanumeric on either side. `221B Baker St` was the same defect and is fixed with it.
+
+Punctuation is untouched by that rule, because punctuation touching a word is correct and
+pinned by a test. The one exception is a lone trailing `s`, which really is a suffix on the
+number word rather than a token beside it: `Under-14s` is `Under-fourteens`. That exception is
+the entire cost of the rule, and it was measured — without it the held-out slice drops 94.0 to
+93.9, fourteen sentences change, and the only two regressions are the plural.
 
 ### The corpus slices
 
