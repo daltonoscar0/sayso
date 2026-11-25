@@ -2,6 +2,13 @@
 
 Bidirectional weighted-FST text normaliser, built on [Scalpel](https://github.com/daltonoscar0/Scalpel).
 
+Stage 1 of a three-stage TTS front end. **Try it in your browser at
+[oscarpdalton.com/frontend](https://oscarpdalton.com/frontend)** — this
+normaliser compiles to WebAssembly and runs in the tab, 112 KB gzipped and
+byte-identical to the binary on 20,616 test documents. The chain, the
+evaluation and the page are in
+[frontend-demo](https://github.com/daltonoscar0/frontend-demo).
+
 One grammar per semiotic class, written once in the speaking direction. Reading it forwards
 verbalises text for TTS; reading the *same machine* backwards does dictation-style inverse
 normalisation. There is no second grammar, no rule list, and no model weights.
