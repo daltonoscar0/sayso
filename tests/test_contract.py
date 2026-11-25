@@ -52,13 +52,20 @@ def test_every_decision_has_the_contract_fields(demo):
     assert demo["decisions"]
     for decision in demo["decisions"]:
         assert set(decision) >= {
-            "span", "surface", "result", "kind", "rule", "alternatives", "score",
+            "span", "out_span", "surface", "result", "kind", "rule",
+            "alternatives", "score",
         }
         start, end = decision["span"]
         assert 0 <= start < end <= len(demo["input"])
         # The span is offsets into `input`, so it must actually bracket the
         # surface it claims to have read.
         assert demo["input"][start:end] == decision["surface"]
+        # And `out_span` is offsets into `output`, bracketing the result. It
+        # cannot be derived from `span`: the segments before this one changed
+        # length, so the two coordinate systems have drifted by then.
+        out_start, out_end = decision["out_span"]
+        assert 0 <= out_start < out_end <= len(demo["output"])
+        assert demo["output"][out_start:out_end] == decision["result"]
         assert isinstance(decision["score"], (int, float))
         assert "note" in decision
 

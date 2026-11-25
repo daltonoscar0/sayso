@@ -138,6 +138,20 @@ std::string stage_result_json(const std::string& input, Direction dir,
         json += "{";
         json += "\"span\":[" + std::to_string(segment.start_byte) + "," +
                 std::to_string(segment.end_byte) + "],";
+        // Where this decision's output landed in `output`. The serialiser copies
+        // the text between segments through verbatim, so a segment's offsets on
+        // the spoken side are not its offsets on the written side and cannot be
+        // derived from them -- which is what `Analysis::placements` is for, and
+        // until now only `name_spans` used it. A consumer that wants to show a
+        // reader which words this stage changed needs to point at the spoken
+        // side, and reconstructing the arithmetic downstream would be a second
+        // copy of the serialiser.
+        for (const Placement& p : analysis.placements) {
+            if (p.segment != s) continue;
+            json += "\"out_span\":[" + std::to_string(p.out_begin) + "," +
+                    std::to_string(p.out_end) + "],";
+            break;
+        }
         json += "\"surface\":" + quoted(segment.source) + ",";
         json += "\"result\":" + quoted(segment.output) + ",";
         json += "\"kind\":" + quoted(lower(class_name(segment.type))) + ",";

@@ -121,7 +121,7 @@ grammar, put the sentence back together.
                      ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  report: the pipeline contract's StageResult (--json)        │
-│    decisions[]  span, surface, result, kind, rule, score     │
+│    decisions[]  span, out_span, surface, result, kind, rule  │
 │    alternatives[]  what each decision beat, with its weight  │
 │    meta  pron_hints for the words G2P gets wrong, name_spans │
 └──────────────────────────────────────────────────────────────┘
@@ -324,7 +324,8 @@ python -m sayso "I read the 2nd Dr. Lee lead a live band on Reading Rd at 10:30"
   "output": "I read the second Doctor Lee lead a live band on Reading Road at ten thirty",
   "decisions": [
     {
-      "span": [15, 22], "surface": "Dr. Lee", "result": "Doctor Lee",
+      "span": [15, 22], "out_span": [18, 28],
+      "surface": "Dr. Lee", "result": "Doctor Lee",
       "kind": "name", "rule": "sayso.name", "score": 0.04,
       "alternatives": [
         {"result": "doctor", "score": 0.05, "kind": "abbrev", "span": [15, 17]},
@@ -339,6 +340,12 @@ python -m sayso "I read the 2nd Dr. Lee lead a live band on Reading Rd at 10:30"
   }
 }
 ```
+
+`span` is offsets into `input` and `out_span` is offsets into `output`. Both are reported
+because neither can be derived from the other: the serialiser copies the text between segments
+through verbatim, so a segment moves by however much the segments before it grew or shrank. A
+consumer that wants to show a reader which words this stage changed has to point at the spoken
+side, and recomputing that downstream would be a second copy of the serialiser.
 
 An alternative carries its span as well as its score, because the two only mean anything
 together: these readings cover different numbers of characters, so a cheaper one is not a
